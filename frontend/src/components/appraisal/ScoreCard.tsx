@@ -1,0 +1,37 @@
+import { Hourglass } from 'lucide-react'
+import { Card } from '../ui/Card'
+
+/**
+ * Display-only. `maxScore` and `selfScore` are supplied by the backend;
+ * the frontend performs no scoring or aggregation.
+ */
+export function ScoreCard({ scores, compact }: { scores: { maxScore: number; selfScore: number } | null; compact?: boolean }) {
+  const pad = compact ? 'sm' : 'md'
+  if (!scores) {
+    return (
+      <Card variant="flat" pad={pad} className={compact ? 'sm:p-5' : ''}>
+        <p className="type-label text-secondary">Self-score</p>
+        <div className="mt-3 flex items-start gap-3">
+          <span aria-hidden className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-surface-muted text-muted"><Hourglass size={15} /></span>
+          <div>
+            <p className="text-sm font-medium">Awaiting score</p>
+            <p className="type-meta text-muted">The system provides your score after processing.</p>
+          </div>
+        </div>
+      </Card>
+    )
+  }
+  const pct = scores.maxScore > 0 ? Math.min(100, (scores.selfScore / scores.maxScore) * 100) : 0 // bar width only
+  return (
+    <Card variant="flat" pad={pad} className={compact ? 'sm:p-5' : ''}>
+      <p className="type-label text-secondary">Self-score</p>
+      <p className="mt-3 text-2xl font-semibold leading-none tracking-tight tabular-nums">
+        {scores.selfScore}<span className="text-sm font-medium text-muted"> / {scores.maxScore}</span>
+      </p>
+      <div className="mt-3.5 h-1.5 overflow-hidden rounded-full bg-surface-muted" aria-hidden>
+        <div className="h-full rounded-full bg-accent-solid transition-[width] duration-700 ease-out" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="type-meta mt-2 text-muted">Provided by the system</p>
+    </Card>
+  )
+}
