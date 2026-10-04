@@ -27,7 +27,7 @@ export default function Notifications() {
                 <div className="min-w-0 flex-1">
                   <p className={cn('text-[13.5px]', n.read ? 'font-medium text-secondary' : 'font-semibold')}>{n.title}{!n.read && <span className="sr-only"> (unread)</span>}</p>
                   <p className="mt-0.5 text-[13.5px] text-secondary">{n.body}</p>
-                  <time dateTime={n.at} className="type-meta mt-1 block text-muted">{formatDate(n.at, true)}</time>
+                  <time dateTime={n.createdAt} className="type-meta mt-1 block text-muted">{formatDate(n.createdAt, true)}</time>
                 </div>
               </li>
             ))}

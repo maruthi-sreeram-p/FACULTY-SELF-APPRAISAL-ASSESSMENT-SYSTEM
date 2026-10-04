@@ -10,8 +10,8 @@ export interface UploadItem {
   size: number
   state?: 'uploading' | 'done' | 'error'
   error?: string
-  /** supporting-document checklist category */
-  category?: string
+  /** supporting-document checklist item (contract code) */
+  documentType?: string
   /** true for a few seconds after a successful upload */
   fresh?: boolean
 }

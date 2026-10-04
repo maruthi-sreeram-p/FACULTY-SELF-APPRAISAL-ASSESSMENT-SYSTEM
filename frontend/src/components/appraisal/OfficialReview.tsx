@@ -1,5 +1,5 @@
 import { Hourglass } from 'lucide-react'
-import type { OfficialReview as Review } from '../../types'
+import type { ReviewDto } from '../../contract/dto'
 import { formatDate } from '../../lib/utils'
 import { Card } from '../ui/Card'
 
@@ -10,9 +10,9 @@ const LABEL = {
 
 /**
  * Read-only view of the HoD recommendation / Principal remarks box and its
- * "(Signature with Seal & Date)" line. Faculty cannot edit these; values come from the backend.
+ * "(Signature with Seal & Date)" line. Faculty cannot edit these; values come from the backend (ReviewDto).
  */
-export function OfficialReview({ kind, review }: { kind: 'hod' | 'principal'; review?: Review | null }) {
+export function OfficialReview({ kind, review }: { kind: 'hod' | 'principal'; review?: ReviewDto | null }) {
   const l = LABEL[kind]
   return (
     <Card pad="none">
@@ -31,11 +31,11 @@ export function OfficialReview({ kind, review }: { kind: 'hod' | 'principal'; re
         <dl className="grid gap-4 sm:grid-cols-2">
           <div>
             <dt className="type-label text-secondary">{l.signer} (Signature with Seal &amp; Date)</dt>
-            <dd className="mt-1 text-[13.5px] font-medium">{review?.signedBy || <span className="font-normal text-muted">Awaiting</span>}</dd>
+            <dd className="mt-1 text-[13.5px] font-medium">{review?.signedByName || <span className="font-normal text-muted">Awaiting</span>}</dd>
           </div>
           <div>
             <dt className="type-label text-secondary">Date</dt>
-            <dd className="mt-1 text-[13.5px] font-medium">{review?.signedAt ? formatDate(review.signedAt) : <span className="font-normal text-muted">Awaiting</span>}</dd>
+            <dd className="mt-1 text-[13.5px] font-medium">{review?.signedOn ? formatDate(review.signedOn) : <span className="font-normal text-muted">Awaiting</span>}</dd>
           </div>
         </dl>
       </div>

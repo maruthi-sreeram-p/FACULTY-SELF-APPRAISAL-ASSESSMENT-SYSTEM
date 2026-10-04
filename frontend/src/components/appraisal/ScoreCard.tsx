@@ -1,13 +1,14 @@
 import { Hourglass } from 'lucide-react'
+import type { ScoreSheetDto } from '../../contract/dto'
 import { Card } from '../ui/Card'
 
 /**
- * Display-only. `maxScore` and `selfScore` are supplied by the backend;
+ * Display-only. `maxScore` and `selfScore` are supplied by the backend (ScoreSheetDto);
  * the frontend performs no scoring or aggregation.
  */
-export function ScoreCard({ scores, compact }: { scores: { maxScore: number; selfScore: number } | null; compact?: boolean }) {
+export function ScoreCard({ scoreSheet, compact }: { scoreSheet: ScoreSheetDto | null; compact?: boolean }) {
   const pad = compact ? 'sm' : 'md'
-  if (!scores) {
+  if (!scoreSheet || scoreSheet.selfScore === null) {
     return (
       <Card variant="flat" pad={pad} className={compact ? 'sm:p-5' : ''}>
         <p className="type-label text-secondary">Self-score</p>
@@ -21,12 +22,12 @@ export function ScoreCard({ scores, compact }: { scores: { maxScore: number; sel
       </Card>
     )
   }
-  const pct = scores.maxScore > 0 ? Math.min(100, (scores.selfScore / scores.maxScore) * 100) : 0 // bar width only
+  const pct = scoreSheet.maxScore > 0 ? Math.min(100, (scoreSheet.selfScore / scoreSheet.maxScore) * 100) : 0 // bar width only
   return (
     <Card variant="flat" pad={pad} className={compact ? 'sm:p-5' : ''}>
       <p className="type-label text-secondary">Self-score</p>
       <p className="mt-3 text-2xl font-semibold leading-none tracking-tight tabular-nums">
-        {scores.selfScore}<span className="text-sm font-medium text-muted"> / {scores.maxScore}</span>
+        {scoreSheet.selfScore}<span className="text-sm font-medium text-muted"> / {scoreSheet.maxScore}</span>
       </p>
       <div className="mt-3.5 h-1.5 overflow-hidden rounded-full bg-surface-muted" aria-hidden>
         <div className="h-full rounded-full bg-accent-solid transition-[width] duration-700 ease-out" style={{ width: `${pct}%` }} />

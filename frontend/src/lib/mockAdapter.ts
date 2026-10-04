@@ -1,82 +1,108 @@
 import { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios'
 import { STEPS } from '../data/appraisalSchema'
-import { completionPercent, stepState, COMPLETABLE } from './completion'
+import { fromContent, toContent } from '../contract/mapper'
 import type {
-  AppraisalDraft, AppraisalSummary, DashboardData, DocumentItem, NotificationItem, Profile, ReportItem,
-} from '../types'
+  AcademicYearDto, ActivityDto, AppraisalContentDto, AppraisalDto, AppraisalSummaryDto, DocumentDto, FacultyProfileDto,
+  NotificationDto, ReportDto,
+} from '../contract/dto'
+import { COMPLETABLE, stepState } from './completion'
 
 /**
- * Local stand-in for the backend so the UI can run on its own.
- * Enabled with VITE_USE_MOCK=true. Everything here (including the sample
- * score) is placeholder data: the real backend is the source of truth.
+ * Local stand-in for the PROPOSED backend (docs/backend/api-contract.md). Enabled with VITE_USE_MOCK=true.
+ * It stores and returns the same wire DTOs the real backend would (src/contract/dto.ts). Everything here,
+ * including the sample profile, is placeholder data. The real backend is the source of truth.
+ *
+ * Deliberately NOT mocked: scoring. `scoreSheet` stays null because the PDF defines maximum marks but no way
+ * to produce a self-score; HoD / Principal reviews are also null until a backend supplies them.
  */
 
-const KEY = 'mock-db-v2'
-const CURRENT_YEAR = '2025-26'
+const KEY = 'mock-db-v3'
+const LOCKED = ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED']
+const CONTENT_KEYS = Object.keys(toContent({})) as (keyof AppraisalContentDto)[]
 
 interface Db {
-  drafts: Record<string, AppraisalDraft>
-  documents: DocumentItem[]
-  notifications: NotificationItem[]
+  appraisals: AppraisalDto[]
+  documents: DocumentDto[]
+  notifications: NotificationDto[]
+  activity: Record<string, ActivityDto[]>
 }
 
-const profile: Profile = {
+const profile: FacultyProfileDto = {
   id: 'f-001',
+  employeeId: 'FAC-1042',
   name: 'P. Maruthi Sreeram',
   email: 'maruthi.sreeram@college.example',
-  designation: 'Assistant Professor',
-  cadre: 'Assistant Professor',
-  department: 'Computer Science & Engineering',
-  employeeId: 'FAC-1042',
+  contactNo: null,
+  department: { code: 'CSE_IT', label: 'CSE / IT' },
+  cadre: 'ASSISTANT_PROFESSOR',
   avatarUrl: null,
 }
 
-const reports: ReportItem[] = []
+const years: AcademicYearDto[] = [
+  { label: '2025-26', current: true },
+  { label: '2024-25', current: false },
+  { label: '2023-24', current: false },
+]
 
-const emptyDraft = (year: string): AppraisalDraft => ({
-  year, status: 'not_started', updatedAt: null, data: {}, scores: null,
-})
+const reports: ReportDto[] = []
 
 function load(): Db {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw) return JSON.parse(raw)
   } catch { /* ignore */ }
-  const now = Date.now()
   return {
-    drafts: { [CURRENT_YEAR]: emptyDraft(CURRENT_YEAR) },
+    appraisals: [],
     documents: [],
+    activity: {},
     notifications: [
-      { id: 'n1', title: 'Appraisal window open', body: `The ${CURRENT_YEAR} self-appraisal is open for submissions.`, at: new Date(now - 864e5).toISOString(), read: false },
-      { id: 'n2', title: 'Welcome', body: 'Save drafts at any time; you can return and continue later.', at: new Date(now - 3 * 864e5).toISOString(), read: true },
+      { id: 'n1', title: 'Welcome', body: 'Your draft is saved automatically while you work. You can return and continue later.', createdAt: new Date(Date.now() - 864e5).toISOString(), read: false },
     ],
   }
 }
 const save = (db: Db) => { try { localStorage.setItem(KEY, JSON.stringify(db)) } catch { /* ignore */ } }
 
-const draftFor = (db: Db, year: string) => (db.drafts[year] ??= emptyDraft(year))
+class HttpError extends Error { constructor(public status: number, message: string) { super(message) } }
 
-function summary(d: AppraisalDraft): AppraisalSummary {
-  return { year: d.year, status: d.status, completion: completionPercent(STEPS, d.data), updatedAt: d.updatedAt }
+function log(db: Db, id: string, message: string, mergeWithPrevious = false) {
+  const list = (db.activity[id] ??= [])
+  if (mergeWithPrevious && list[0]?.message === message) { list[0].at = new Date().toISOString(); return }
+  list.unshift({ id: crypto.randomUUID(), message, at: new Date().toISOString() })
 }
 
-function dashboard(db: Db, year: string): DashboardData {
-  const d = draftFor(db, year)
-  const pending = STEPS.filter(COMPLETABLE)
-    .filter((s) => stepState(s, d.data) !== 'complete')
-    .map((s) => ({ stepId: s.id, title: s.title }))
-  const activity: DashboardData['activity'] = []
-  if (d.updatedAt) activity.push({ id: 'a1', text: 'Draft saved', at: d.updatedAt })
-  if (d.status === 'submitted') activity.push({ id: 'a2', text: 'Appraisal submitted', at: d.updatedAt! })
-  db.documents.filter((x) => x.year === year).slice(-3).forEach((x) =>
-    activity.push({ id: 'doc' + x.id, text: `Uploaded ${x.name}`, at: x.uploadedAt }))
-  activity.sort((a, b) => +new Date(b.at) - +new Date(a.at))
+function summary(a: AppraisalDto): AppraisalSummaryDto {
+  const data = fromContent(a)
+  const steps = STEPS.filter(COMPLETABLE)
   return {
-    year, status: d.status, completion: completionPercent(STEPS, d.data), scores: d.scores,
-    pendingSections: d.status === 'not_started' || d.status === 'draft' ? pending : [],
-    documentCount: db.documents.filter((x) => x.year === year).length,
-    activity,
+    id: a.id, academicYear: a.academicYear, status: a.status, createdAt: a.createdAt, updatedAt: a.updatedAt, submittedAt: a.submittedAt,
+    progress: { completedSections: steps.filter((s) => stepState(s, data) === 'complete').length, totalSections: steps.length },
   }
+}
+
+/** Creating an appraisal snapshots the faculty profile into Part A (generalInfo). */
+function create(db: Db, academicYear: string): AppraisalDto {
+  if (!years.some((y) => y.label === academicYear)) throw new HttpError(422, `Unknown academic year ${academicYear}`)
+  if (db.appraisals.some((a) => a.academicYear === academicYear)) throw new HttpError(409, `An appraisal for ${academicYear} already exists`)
+  const content = toContent({})
+  content.generalInfo = {
+    ...content.generalInfo,
+    facultyName: profile.name, academicYear, employeeId: profile.employeeId, contactNo: profile.contactNo,
+    departmentCode: profile.department?.code ?? null, cadre: profile.cadre, email: profile.email,
+  }
+  const now = new Date().toISOString()
+  const a: AppraisalDto = {
+    ...content, id: crypto.randomUUID(), facultyId: profile.id, academicYear, status: 'DRAFT', version: 1,
+    createdAt: now, updatedAt: now, submittedAt: null, scoreSheet: null, reviews: { hod: null, principal: null },
+  }
+  db.appraisals.push(a)
+  log(db, a.id, 'Appraisal started')
+  return a
+}
+
+const find = (db: Db, id: string) => {
+  const a = db.appraisals.find((x) => x.id === id)
+  if (!a) throw new HttpError(404, 'Appraisal not found')
+  return a
 }
 
 function route(config: InternalAxiosRequestConfig): unknown {
@@ -86,41 +112,74 @@ function route(config: InternalAxiosRequestConfig): unknown {
   const db = load()
   let m: RegExpMatchArray | null
 
-  if (method === 'get' && url === '/profile') return profile
-  if (method === 'get' && url === '/dashboard') return dashboard(db, config.params?.year ?? CURRENT_YEAR)
+  if (method === 'get' && url === '/faculty/me') return profile
+  if (method === 'get' && url === '/academic-years') return years
+
   if (method === 'get' && url === '/appraisals') {
-    const years = Array.from(new Set([CURRENT_YEAR, ...Object.keys(db.drafts)]))
-    return years.sort().reverse().map((y) => summary(draftFor(db, y)))
+    const year = config.params?.academicYear
+    return db.appraisals.filter((a) => !year || a.academicYear === year).map(summary)
+      .sort((a, b) => b.academicYear.localeCompare(a.academicYear))
   }
-  if ((m = url.match(/^\/appraisals\/([^/]+)$/)) && method === 'get') return draftFor(db, m[1])
-  if ((m = url.match(/^\/appraisals\/([^/]+)\/draft$/)) && method === 'put') {
-    const d = draftFor(db, m[1])
-    if (d.status === 'submitted') throw { status: 409, message: 'This appraisal has already been submitted.' }
-    d.data = body.data
-    d.status = 'draft'
-    d.updatedAt = new Date().toISOString()
+  if (method === 'post' && url === '/appraisals') {
+    const a = create(db, body?.academicYear)
     save(db)
-    return d
+    return a
+  }
+  if ((m = url.match(/^\/appraisals\/([^/]+)$/))) {
+    const a = find(db, m[1])
+    if (method === 'get') return a
+    if (method === 'patch') {
+      if (LOCKED.includes(a.status)) throw new HttpError(409, 'This appraisal has been submitted and can no longer be edited.')
+      const ifMatch = Number(config.headers?.get?.('If-Match') ?? (config.headers as Record<string, unknown> | undefined)?.['If-Match'])
+      if (ifMatch && ifMatch !== a.version) throw new HttpError(412, 'This appraisal was changed elsewhere. Reload to continue.')
+      for (const k of Object.keys(body ?? {})) {
+        if (!CONTENT_KEYS.includes(k as keyof AppraisalContentDto)) throw new HttpError(422, `Unknown section "${k}"`)
+        ;(a as unknown as Record<string, unknown>)[k] = body[k]
+      }
+      a.generalInfo.academicYear = a.academicYear // set by the server, not editable
+      a.version += 1
+      a.updatedAt = new Date().toISOString()
+      log(db, a.id, 'Draft saved', true)
+      save(db)
+      return a
+    }
   }
   if ((m = url.match(/^\/appraisals\/([^/]+)\/submit$/)) && method === 'post') {
-    const d = draftFor(db, m[1])
-    d.status = 'submitted'
-    d.updatedAt = new Date().toISOString()
+    const a = find(db, m[1])
+    if (LOCKED.includes(a.status)) throw new HttpError(409, 'This appraisal has already been submitted.')
+    a.status = 'SUBMITTED'
+    a.submittedAt = a.updatedAt = new Date().toISOString()
+    a.version += 1
+    log(db, a.id, 'Appraisal submitted')
     save(db)
-    return d
+    return a
   }
+  if ((m = url.match(/^\/appraisals\/([^/]+)\/activity$/)) && method === 'get') return db.activity[find(db, m[1]).id] ?? []
+  if ((m = url.match(/^\/appraisals\/([^/]+)\/score-sheet$/)) && method === 'get') {
+    const a = find(db, m[1])
+    if (!a.scoreSheet) throw new HttpError(404, 'No score sheet has been produced yet')
+    return a.scoreSheet
+  }
+  if ((m = url.match(/^\/appraisals\/([^/]+)\/reviews$/)) && method === 'get') return find(db, m[1]).reviews
+
   if (method === 'get' && url === '/documents') return db.documents
   if (method === 'post' && url === '/documents') {
-    const item: DocumentItem = { id: crypto.randomUUID(), uploadedAt: new Date().toISOString(), ...body }
-    db.documents.push(item)
+    const a = find(db, body.appraisalId)
+    const d: DocumentDto = {
+      id: crypto.randomUUID(), appraisalId: a.id, academicYear: a.academicYear, documentType: body.documentType,
+      fileName: body.fileName, contentType: body.contentType ?? null, sizeBytes: body.sizeBytes, uploadedAt: new Date().toISOString(),
+    }
+    db.documents.push(d)
+    log(db, a.id, `Uploaded ${d.fileName}`)
     save(db)
-    return item
+    return d
   }
   if ((m = url.match(/^\/documents\/([^/]+)$/)) && method === 'delete') {
     db.documents = db.documents.filter((x) => x.id !== m![1])
     save(db)
     return { ok: true }
   }
+
   if (method === 'get' && url === '/notifications') return db.notifications
   if (method === 'post' && url === '/notifications/read-all') {
     db.notifications.forEach((n) => (n.read = true))
@@ -128,7 +187,7 @@ function route(config: InternalAxiosRequestConfig): unknown {
     return db.notifications
   }
   if (method === 'get' && url === '/reports') return reports
-  throw { status: 404, message: `No mock route for ${method.toUpperCase()} ${url}` }
+  throw new HttpError(404, `No mock route for ${method.toUpperCase()} ${url}`)
 }
 
 export const mockAdapter: AxiosAdapter = (config) =>
@@ -138,11 +197,12 @@ export const mockAdapter: AxiosAdapter = (config) =>
         const data = route(config)
         resolve({ data, status: 200, statusText: 'OK', headers: {}, config })
       } catch (e) {
-        const err = e as { status?: number; message?: string }
-        const status = err.status ?? 500
-        reject(new AxiosError(err.message ?? 'Mock error', String(status), config, null, {
-          data: { message: err.message }, status, statusText: '', headers: {}, config,
+        const status = e instanceof HttpError ? e.status : 500
+        const detail = e instanceof Error ? e.message : 'Mock error'
+        reject(new AxiosError(detail, String(status), config, null, {
+          data: { title: ({ 404: 'Not Found', 409: 'Conflict', 412: 'Precondition Failed', 422: 'Unprocessable Entity' } as Record<number, string>)[status] ?? 'Error', status, detail },
+          status, statusText: '', headers: {}, config,
         }))
       }
-    }, 350)
+    }, 300)
   })

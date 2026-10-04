@@ -82,3 +82,27 @@ Each of these is labelled in the UI.
 5. Can a faculty member belong to more than one Department / Branch (the PDF uses check-boxes)?
 6. Should "Average Feedback %" be one number or one per phase?
 7. Are supporting documents required to be uploaded, or only ticked as enclosed?
+
+## 6. Contract freeze: additions and backend questions
+
+The frontend/backend boundary was reviewed against the PDF structure and frozen (see [../backend/api-contract.md](../backend/api-contract.md)). Changes made to remove UI-invented shapes:
+
+| Before | Now |
+|---|---|
+| One generic `data: Record<stepId, Record<blockId, …>>` blob with UI shorthand keys (`course`, `fb1`, …) and display strings as values (`'Inst'`, `'Online'`) | Typed contract sections named by the PDF's structure (`teaching.entries[]`, `research.metrics[]`, …) with descriptive property names (`courseCodeName`, `phase1FeedbackPercent`, …) and enum codes (`INST`, `ONLINE`) |
+| Department as free text, designation as free text on the profile | `department: { code, label }` (the PDF's 8 options) and `cadre` (the PDF's 5 cadres) |
+| Part A prefilled in the browser | Part A is a snapshot created by the backend from the profile when the appraisal is created; Academic Year is read-only |
+| Mock-only `/dashboard` endpoint, mock `scores: Record<string, number>` | No dashboard endpoint (the UI composes it from the appraisal, documents and activity); `ScoreSheetDto` with exactly 9 criteria, `maxMarks` and `selfScore` from the backend |
+| Mock statuses `in_progress`, lowercase codes | `NOT_STARTED` (no row), `DRAFT`, `SUBMITTED`; the rest are PROVISIONAL |
+| Whole-appraisal save | `PATCH` of changed sections with optimistic `version` (`If-Match`, `412` on stale) |
+| Documents filtered by free-text category | `documentType` = the PDF's 11-item checklist code |
+| Mock notification said the "appraisal is open for submissions" | Removed: it asserted an appraisal window the PDF does not define |
+
+### Additional questions for the college (backend-facing)
+
+8. How do users sign in (college SSO / directory, or accounts managed by this system)?
+9. Which roles exist besides faculty, HoD and Principal (for example an administrator for academic years and faculty records)? Which faculty does a given HoD review?
+10. How long are appraisals and uploaded documents retained, and may a faculty member see previous years' appraisals?
+11. Is the list of academic years fixed by the college, and is there an open/close window for submission?
+12. Should Part A values (name, department, cadre, qualification, experience) stay editable by faculty after being prefilled from the institutional record?
+13. Which file types and sizes are acceptable for supporting documents, and must they be uploaded or only ticked?

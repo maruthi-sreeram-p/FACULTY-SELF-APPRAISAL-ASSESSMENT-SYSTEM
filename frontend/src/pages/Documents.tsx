@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { FileText, FolderOpen, Search, Trash2 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { SUPPORTING_DOCUMENTS, docCategoryLabel } from '../data/supportingDocuments'
+import { SUPPORTING_DOCUMENTS, docTypeLabel } from '../data/supportingDocuments'
 import { useDocuments } from '../lib/useDocuments'
 import { formatDate, formatSize } from '../lib/utils'
 import { FileUpload } from '../components/forms/FileUpload'
@@ -12,15 +12,15 @@ import { Card } from '../components/ui/Card'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { PageHeader } from '../components/ui/PageHeader'
 import { EmptyState, ErrorState, TableSkeleton } from '../components/ui/States'
-import type { DocumentItem } from '../types'
+import type { DocumentDto, SupportingDocumentType } from '../contract/dto'
 
 export default function Documents() {
   const { year } = useApp()
   const { docs, items, loading, error, reload, add, remove, busy } = useDocuments()
   const [query, setQuery] = useState('')
-  const [category, setCategory] = useState<string>('others')
-  const [deleting, setDeleting] = useState<DocumentItem | null>(null)
-  const shown = useMemo(() => docs.filter((d) => d.name.toLowerCase().includes(query.toLowerCase())), [docs, query])
+  const [category, setCategory] = useState<SupportingDocumentType>('OTHERS')
+  const [deleting, setDeleting] = useState<DocumentDto | null>(null)
+  const shown = useMemo(() => docs.filter((d) => d.fileName.toLowerCase().includes(query.toLowerCase())), [docs, query])
 
   return (
     <>
@@ -33,8 +33,8 @@ export default function Documents() {
           </div>
           <label className="mb-3 block max-w-sm">
             <span className="type-label mb-1.5 block">Supporting document type</span>
-            <select value={category} onChange={(e) => setCategory(e.target.value)} className={controlCls()}>
-              {SUPPORTING_DOCUMENTS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            <select value={category} onChange={(e) => setCategory(e.target.value as SupportingDocumentType)} className={controlCls()}>
+              {SUPPORTING_DOCUMENTS.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
             </select>
           </label>
           {/* only in-flight / failed uploads are listed here; finished files appear in the table below */}
@@ -63,19 +63,19 @@ export default function Documents() {
               <div className="p-3 sm:p-0">
                 <DataTable caption="Uploaded documents" rows={shown} rowKey={(d) => d.id}
                   columns={[
-                    { key: 'name', header: 'Name', render: (d) => <span className="inline-flex items-center gap-2.5"><FileText size={16} className="shrink-0 text-muted" aria-hidden /><span className="truncate font-medium">{d.name}</span></span> },
-                    { key: 'category', header: 'Document type', render: (d) => <span className="text-secondary">{docCategoryLabel(d.category)}</span> },
-                    { key: 'year', header: 'Year', render: (d) => <span className="tabular-nums">{d.year}</span> },
-                    { key: 'size', header: 'Size', align: 'right', render: (d) => formatSize(d.size) },
+                    { key: 'name', header: 'Name', render: (d) => <span className="inline-flex items-center gap-2.5"><FileText size={16} className="shrink-0 text-muted" aria-hidden /><span className="truncate font-medium">{d.fileName}</span></span> },
+                    { key: 'category', header: 'Document type', render: (d) => <span className="text-secondary">{docTypeLabel(d.documentType)}</span> },
+                    { key: 'year', header: 'Year', render: (d) => <span className="tabular-nums">{d.academicYear}</span> },
+                    { key: 'size', header: 'Size', align: 'right', render: (d) => formatSize(d.sizeBytes) },
                     { key: 'at', header: 'Uploaded', render: (d) => <span className="text-secondary">{formatDate(d.uploadedAt)}</span> },
                   ]}
-                  actions={(d) => <IconButton label={`Delete ${d.name}`} tone="danger" onClick={() => setDeleting(d)}><Trash2 size={15} /></IconButton>} />
+                  actions={(d) => <IconButton label={`Delete ${d.fileName}`} tone="danger" onClick={() => setDeleting(d)}><Trash2 size={15} /></IconButton>} />
               </div>
             )}
         </Card>
       </div>
       <ConfirmDialog open={!!deleting} tone="danger" title="Delete this document?" confirmLabel="Delete document"
-        message={`“${deleting?.name}” will be permanently removed from your documents.`} onCancel={() => setDeleting(null)}
+        message={`“${deleting?.fileName}” will be permanently removed from your documents.`} onCancel={() => setDeleting(null)}
         onConfirm={() => { remove(deleting!.id); setDeleting(null) }} />
     </>
   )

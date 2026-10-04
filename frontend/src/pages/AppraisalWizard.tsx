@@ -3,14 +3,16 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { AlertCircle, ArrowLeft, ArrowRight, Check, CheckCircle2, Loader2, Save, Send } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { useToast } from '../context/ToastContext'
+import { pickSections, sectionKeyOf, toContent, fromContent } from '../contract/mapper'
+import type { AppraisalDto, AppraisalSectionKey } from '../contract/dto'
 import { STEPS, stepById } from '../data/appraisalSchema'
-import { normalizeCadre } from '../data/scoring'
-import { errorMessage, services } from '../lib/api'
+import { isCadreCode } from '../data/scoring'
+import { LOCKED_STATUSES, errorMessage, services } from '../lib/api'
 import { COMPLETABLE, blockingIssues, notAddressed as getNotAddressed, stepState, type StepState } from '../lib/completion'
 import { useAsync } from '../lib/useAsync'
 import { useDocuments } from '../lib/useDocuments'
 import { formatDate } from '../lib/utils'
-import type { AppraisalData, AppraisalDraft, BlockValue, FieldValues } from '../types'
+import type { AppraisalData, BlockValue, FieldValues } from '../types'
 import { Stepper } from '../components/appraisal/Stepper'
 import { StepContent } from '../components/appraisal/StepContent'
 import { controlCls } from '../components/forms/FormField'
@@ -22,12 +24,12 @@ import { ErrorState, LoadingSkeleton } from '../components/ui/States'
 import { StatusBadge } from '../components/ui/StatusBadge'
 
 type SaveState = 'saved' | 'saving' | 'dirty' | 'error'
-const LOCKED = ['submitted', 'under_review', 'approved', 'rejected']
 
 export default function AppraisalWizard() {
   const { year = '', stepId = 'general' } = useParams()
-  const { profile, setYear } = useApp()
-  const q = useAsync(() => services.appraisal(year), [year])
+  const { setYear } = useApp()
+  // Opening the workflow creates the DRAFT appraisal for this academic year if none exists (POST /appraisals).
+  const q = useAsync(() => services.ensureAppraisal(year), [year])
   useEffect(() => { if (year) setYear(year) }, [year, setYear])
 
   if (!stepById(stepId)) return <Navigate to={`/appraisals/${year}/step/general`} replace />
@@ -40,30 +42,16 @@ export default function AppraisalWizard() {
     )
   }
   if (q.error || !q.data) return <Card pad="none"><ErrorState message={q.error ?? 'Unable to load appraisal'} onRetry={q.reload} /></Card>
-  return <Wizard key={year} initial={q.data} year={year} stepId={stepId} profile={profile} />
+  return <Wizard key={q.data.id} initial={q.data} year={year} stepId={stepId} />
 }
 
-function Wizard({ initial, year, stepId, profile }: {
-  initial: AppraisalDraft; year: string; stepId: string; profile: ReturnType<typeof useApp>['profile']
-}) {
+function Wizard({ initial, year, stepId }: { initial: AppraisalDto; year: string; stepId: string }) {
   const nav = useNavigate()
   const toast = useToast()
   const docs = useDocuments(year)
 
-  const [data, setData] = useState<AppraisalData>(() => {
-    const d = { ...initial.data }
-    // Prefill Part A from the institutional profile. The faculty can edit every value.
-    if (!d.general?.general && profile) {
-      d.general = {
-        ...d.general,
-        general: {
-          name: profile.name, academicYear: year, employeeId: profile.employeeId ?? '', email: profile.email,
-          cadre: normalizeCadre(profile.cadre) ?? '',
-        },
-      }
-    }
-    return d
-  })
+  // Form state mirrors the contract content; every input is a string (see src/contract/mapper.ts).
+  const [data, setData] = useState<AppraisalData>(() => fromContent(initial))
   const [status, setStatus] = useState(initial.status)
   const [savedAt, setSavedAt] = useState<string | null>(initial.updatedAt)
   const [saveState, setSaveState] = useState<SaveState>('saved')
@@ -71,29 +59,36 @@ function Wizard({ initial, year, stepId, profile }: {
   const [confirming, setConfirming] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
-  const readOnly = LOCKED.includes(status)
+  const readOnly = LOCKED_STATUSES.includes(status)
   const step = stepById(stepId)!
   const idx = STEPS.findIndex((s) => s.id === stepId)
   const base = `/appraisals/${year}/step`
 
   const latest = useRef(data)
   latest.current = data
-  const dirty = useRef(false)
+  const version = useRef(initial.version)
+  /** contract section → change counter. Only changed sections are sent (PATCH). */
+  const dirty = useRef(new Map<AppraisalSectionKey, number>())
 
   const save = useCallback(async (quiet = true) => {
     if (readOnly) return true
+    const sent = new Map(dirty.current)
+    if (sent.size === 0) { setSaveState('saved'); return true }
     setSaveState('saving')
     try {
-      const r = await services.saveDraft(year, latest.current)
-      dirty.current = false
-      setSavedAt(r.updatedAt); setStatus(r.status); setSaveState('saved')
+      const payload = pickSections(toContent(latest.current), sent.keys())
+      const r = await services.patchAppraisal(initial.id, version.current, payload)
+      version.current = r.version
+      for (const [k, n] of sent) if (dirty.current.get(k) === n) dirty.current.delete(k)
+      setSavedAt(r.updatedAt); setStatus(r.status)
+      setSaveState(dirty.current.size ? 'dirty' : 'saved')
       if (!quiet) toast('Draft saved', 'success')
       return true
     } catch (e) {
       setSaveState('error'); toast(`Could not save: ${errorMessage(e)}`, 'error')
       return false
     }
-  }, [readOnly, year, toast])
+  }, [readOnly, initial.id, toast])
 
   // Autosave 1.5 s after the last change.
   useEffect(() => {
@@ -104,7 +99,8 @@ function Wizard({ initial, year, stepId, profile }: {
 
   const update = (sid: string, blockId: string, v: BlockValue) => {
     if (readOnly) return
-    dirty.current = true
+    const key = sectionKeyOf(blockId)
+    dirty.current.set(key, (dirty.current.get(key) ?? 0) + 1)
     setData((d) => ({ ...d, [sid]: { ...(d[sid] ?? {}), [blockId]: v } }))
     setSaveState('dirty')
   }
@@ -117,11 +113,12 @@ function Wizard({ initial, year, stepId, profile }: {
   const issues = useMemo(() => blockingIssues(STEPS, data), [data])
   const unaddressed = useMemo(() => getNotAddressed(STEPS, data), [data])
 
-  // Maximum marks follow the cadre chosen in Part A, falling back to the institutional profile.
-  const cadre = normalizeCadre((data.general?.general as FieldValues | undefined)?.cadre) ?? normalizeCadre(profile?.cadre)
+  // Maximum marks follow the cadre in Part A (a snapshot of the faculty profile, edited by the faculty).
+  const chosen = (data.general?.generalInfo as FieldValues | undefined)?.cadre
+  const cadre = isCadreCode(chosen) ? chosen : null
 
   const go = async (to: string) => {
-    if (dirty.current) await save()
+    if (dirty.current.size) await save()
     setShowErrors(false)
     nav(`${base}/${to}`)
     window.scrollTo({ top: 0 })
@@ -130,8 +127,9 @@ function Wizard({ initial, year, stepId, profile }: {
   const submit = async () => {
     setSubmitting(true)
     try {
-      if (dirty.current && !(await save())) return
-      const r = await services.submit(year)
+      if (dirty.current.size && !(await save())) return
+      const r = await services.submit(initial.id)
+      version.current = r.version
       setStatus(r.status); setSavedAt(r.updatedAt); setConfirming(false)
       toast('Appraisal submitted', 'success')
     } catch (e) { toast(errorMessage(e), 'error') } finally { setSubmitting(false) }
@@ -190,13 +188,13 @@ function Wizard({ initial, year, stepId, profile }: {
 
           {readOnly && (
             <div role="status" className="mb-5 flex items-center gap-2.5 rounded-card border border-info/25 bg-info-subtle px-4 py-3 text-[13.5px] text-info">
-              <CheckCircle2 size={16} aria-hidden /> This appraisal is {status.replace('_', ' ')} and can no longer be edited.
+              <CheckCircle2 size={16} aria-hidden /> This appraisal is {status.toLowerCase().replace('_', ' ')} and can no longer be edited.
             </div>
           )}
 
           <div key={stepId} className="animate-page space-y-5">
             <StepContent step={step} ctx={{
-              year, data, readOnly, showErrors, update, docs, scores: initial.scores, reviews: initial.reviews, cadre,
+              year, data, readOnly, showErrors, update, docs, scoreSheet: initial.scoreSheet, reviews: initial.reviews, cadre,
               states, issues, notAddressed: unaddressed, submitted: readOnly, onSubmit: () => setConfirming(true),
             }} />
           </div>

@@ -21,8 +21,8 @@ export default function Reports() {
               {q.data.map((r) => (
                 <li key={r.id} className="flex items-center gap-3 px-5 py-3.5">
                   <span aria-hidden className="grid h-9 w-9 shrink-0 place-items-center rounded-control bg-surface-muted text-secondary"><FileBarChart size={17} /></span>
-                  <div className="min-w-0 flex-1"><p className="truncate text-[13.5px] font-medium">{r.title}</p><p className="type-meta text-muted">{r.year}</p></div>
-                  <a href={r.url} download className="inline-flex h-control-sm items-center gap-2 rounded-control border border-border bg-surface px-3 text-[13px] font-medium shadow-xs transition duration-150 hover:border-border-strong hover:bg-surface-muted"><Download size={14} aria-hidden /> Download</a>
+                  <div className="min-w-0 flex-1"><p className="truncate text-[13.5px] font-medium">{r.title}</p><p className="type-meta text-muted">{r.academicYear}</p></div>
+                  <a href={r.downloadUrl} download className="inline-flex h-control-sm items-center gap-2 rounded-control border border-border bg-surface px-3 text-[13px] font-medium shadow-xs transition duration-150 hover:border-border-strong hover:bg-surface-muted"><Download size={14} aria-hidden /> Download</a>
                 </li>
               ))}
             </ul>

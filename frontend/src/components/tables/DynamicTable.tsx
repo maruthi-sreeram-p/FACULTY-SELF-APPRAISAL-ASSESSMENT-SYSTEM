@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Copy, Pencil, Plus, Table2, Trash2 } from 'lucide-react'
 import type { FieldDef, Row } from '../../types'
 import { fieldsErrors } from '../../lib/completion'
-import { formatDay, formatMonth } from '../../lib/utils'
+import { formatDay, formatMonth, optionLabel, optionValue } from '../../lib/utils'
 import { Button, IconButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -24,6 +24,10 @@ function cell(f: FieldDef, r: Row): ReactNode {
   if (!v) return dash
   if (f.type === 'date') return formatDay(v)
   if (f.type === 'month') return formatMonth(v)
+  if (f.type === 'select') {
+    const opt = f.options?.find((x) => optionValue(x) === v)
+    return opt ? (typeof opt === 'string' ? opt : (opt.short ?? optionLabel(opt))) : v
+  }
   return v
 }
 

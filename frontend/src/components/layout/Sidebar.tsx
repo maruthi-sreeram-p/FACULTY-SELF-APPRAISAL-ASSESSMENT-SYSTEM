@@ -4,6 +4,7 @@ import {
   BarChart3, Bell, ChevronRight, ChevronsLeft, ChevronsRight, FileText, FolderOpen, GraduationCap, LayoutDashboard, Settings, User, X,
 } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
+import { cadreLabel } from '../../data/scoring'
 import { Avatar } from '../ui/Avatar'
 import { IconButton } from '../ui/Button'
 import { LoadingSkeleton } from '../ui/States'
@@ -83,8 +84,8 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onClose }: {
                 <Avatar name={profile.name} src={profile.avatarUrl} size="md" />
                 <span className={cn('min-w-0 flex-1 leading-tight', rail && 'lg:hidden')}>
                   <span className="block truncate text-[13.5px] font-semibold">{profile.name}</span>
-                  <span className="mt-0.5 block truncate text-xs text-secondary">{profile.cadre ?? profile.designation}</span>
-                  <span className="mt-0.5 line-clamp-2 type-meta text-muted">{profile.department}</span>
+                  <span className="mt-0.5 block truncate text-xs text-secondary">{cadreLabel(profile.cadre) || "—"}</span>
+                  <span className="mt-0.5 line-clamp-2 type-meta text-muted">{profile.department?.label ?? ""}</span>
                 </span>
                 <ChevronRight size={15} aria-hidden className={cn('shrink-0 -translate-x-1 text-muted opacity-0 transition duration-150 group-hover:translate-x-0 group-hover:opacity-100', rail && 'lg:hidden')} />
                 {rail && <Tip>{profile.name}</Tip>}

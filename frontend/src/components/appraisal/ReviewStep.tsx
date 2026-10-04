@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { STEPS } from '../../data/appraisalSchema'
 import type { Issue, StepState } from '../../lib/completion'
 import { cn } from '../../lib/utils'
-import type { AppraisalDraft, StepDef } from '../../types'
+import type { AppraisalDto } from '../../contract/dto'
+import type { StepDef } from '../../types'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 
@@ -21,7 +22,7 @@ export function ReviewStep({ year, states, issues, notAddressed, reviews, enclos
   states: Record<string, StepState>
   issues: Issue[]
   notAddressed: StepDef[]
-  reviews: AppraisalDraft['reviews']
+  reviews: AppraisalDto['reviews']
   enclosedCount: number
   submitted: boolean
   onSubmit: () => void

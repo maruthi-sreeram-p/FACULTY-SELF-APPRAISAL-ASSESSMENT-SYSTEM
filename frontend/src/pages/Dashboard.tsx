@@ -30,7 +30,7 @@ export default function Dashboard() {
   const nav = useNavigate()
   const q = useAsync(() => services.dashboard(year), [year])
   const d = q.data
-  const editable = d && ['not_started', 'draft', 'in_progress', 'returned'].includes(d.status)
+  const editable = d && ['NOT_STARTED', 'DRAFT', 'RETURNED'].includes(d.status)
   const next = d?.pendingSections[0]
   const remaining = d?.pendingSections.length ?? 0
 
@@ -52,12 +52,12 @@ export default function Dashboard() {
               <div className="min-w-0 flex-1">
                 <h2 className="type-section text-base">Appraisal completion</h2>
                 <p className="mt-1 text-sm text-secondary">
-                  {remaining === 0 ? (d.status === 'not_started' || d.status === 'draft' ? 'All sections are complete.' : 'This appraisal has been submitted.') : `${remaining} ${remaining === 1 ? 'section' : 'sections'} remaining before you can submit.`}
+                  {remaining === 0 ? (d.status === 'NOT_STARTED' || d.status === 'DRAFT' ? 'All sections are complete.' : 'This appraisal has been submitted.') : `${remaining} ${remaining === 1 ? 'section' : 'sections'} remaining before you can submit.`}
                 </p>
                 {d.activity[0] && <p className="type-meta mt-1 flex items-center gap-1.5 text-muted"><Clock size={12} aria-hidden /> Last activity {formatDate(d.activity[0].at, true)}</p>}
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <Button onClick={() => nav(`/appraisals/${year}/step/${editable && remaining === 0 ? 'review' : (next?.stepId ?? 'general')}`)}>
-                    {editable ? (d.status === 'not_started' ? 'Start appraisal' : remaining === 0 ? 'Review and submit' : 'Continue appraisal') : 'View appraisal'} <ArrowRight size={15} aria-hidden />
+                    {editable ? (d.status === 'NOT_STARTED' ? 'Start appraisal' : remaining === 0 ? 'Review and submit' : 'Continue appraisal') : 'View appraisal'} <ArrowRight size={15} aria-hidden />
                   </Button>
                   {editable && next && <span className="text-[13px] text-secondary">Up next: <span className="font-medium text-primary">{next.title}</span></span>}
                 </div>
@@ -66,7 +66,7 @@ export default function Dashboard() {
           </Card>
 
           {/* SECONDARY: score */}
-          <ScoreCard scores={d.scores} />
+          <ScoreCard scoreSheet={d.scoreSheet} />
 
           {/* SUPPORTING: pending sections */}
           <Card pad="none" className="lg:col-span-2">

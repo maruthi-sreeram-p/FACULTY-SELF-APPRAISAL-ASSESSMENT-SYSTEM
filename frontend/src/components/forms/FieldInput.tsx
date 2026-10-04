@@ -24,7 +24,7 @@ export function FieldInput({ field, values, onChange, error, className, disabled
   if (field.type === 'daterange') {
     const msg = error ?? field.hint
     return (
-      <fieldset className={cls} disabled={disabled}>
+      <fieldset className={cls} disabled={disabled || field.readOnly}>
         <legend className="type-label mb-1.5 text-primary">{field.label}</legend>
         <div className="grid grid-cols-2 gap-3">
           {(['From', 'To'] as const).map((side) => (
@@ -48,7 +48,7 @@ export function FieldInput({ field, values, onChange, error, className, disabled
     return (
       <div className={cls}>
         <label className="flex cursor-pointer items-start gap-3 text-[13.5px]">
-          <input type="checkbox" checked={value === 'true'} disabled={disabled} onChange={(e) => set(String(e.target.checked))}
+          <input type="checkbox" checked={value === 'true'} disabled={disabled || field.readOnly} onChange={(e) => set(String(e.target.checked))}
             className="mt-0.5 h-4 w-4 accent-[var(--accent-solid)]" aria-invalid={error ? true : undefined} />
           <span>{field.label}{field.required && <span className="ml-0.5 text-danger" aria-hidden>*</span>}</span>
         </label>
@@ -60,7 +60,7 @@ export function FieldInput({ field, values, onChange, error, className, disabled
   return (
     <FormField label={field.label} required={field.required} hint={field.hint} error={error} className={cls}>
       {(p) => {
-        const common = { ...p, value, disabled, placeholder: field.placeholder, onChange: (e: { target: { value: string } }) => set(e.target.value) }
+        const common = { ...p, value, disabled: disabled || field.readOnly, placeholder: field.placeholder, onChange: (e: { target: { value: string } }) => set(e.target.value) }
         switch (field.type) {
           case 'textarea':
             return <textarea {...common} rows={3} className={controlCls(!!error, true)} />

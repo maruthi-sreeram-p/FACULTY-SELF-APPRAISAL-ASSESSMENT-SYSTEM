@@ -1,53 +1,50 @@
+import type { CadreCode, CriterionCode } from '../contract/dto'
+
 /**
- * Score sheet configuration taken from the college's Faculty Self-Appraisal &
- * Assessment Report: the nine scoring criteria and the cadre-wise MAXIMUM marks.
+ * Score sheet reference data taken from the college's Faculty Self-Appraisal & Assessment Report:
+ * the nine scoring criteria and the cadre-wise MAXIMUM marks (Annexure A).
  *
  * IMPORTANT
- *  - The PDF defines maximum marks only. It does not define a formula that turns
- *    activities into a self-score, so the frontend never calculates scores.
- *    `selfScore` values come from the backend and are only displayed.
+ *  - The PDF defines maximum marks only. It does not define a formula that turns activities into a
+ *    self-score, so the frontend never calculates scores. `selfScore` comes from the backend.
+ *  - The backend is the source of truth for maxScore / selfScore. This file is the printed reference used for the
+ *    Annexure A table and until the backend returns a score sheet.
  *  - "Any Other Contributions" has no scoring row in the PDF, so there is no 10th criterion.
  */
 
-export const CRITERIA = [
-  { id: 'teaching', no: 1, title: 'Teaching & Learning', stepId: 'teaching' },
-  { id: 'mentoring', no: 2, title: 'Student Mentoring, Guidance & Achievements', stepId: 'mentoring' },
-  { id: 'fdp', no: 3, title: 'FDPs / Certifications', stepId: 'fdp' },
-  { id: 'admin', no: 4, title: 'Administrative, Curriculum & Quality Contributions', stepId: 'admin' },
-  { id: 'research', no: 5, title: 'Research & Publications', stepId: 'research' },
-  { id: 'projects', no: 6, title: 'Funded Projects / Consultancy', stepId: 'projects' },
-  { id: 'ipr', no: 7, title: 'Patents, Books & IPR', stepId: 'ipr' },
-  { id: 'outreach', no: 8, title: 'Outreach', stepId: 'outreach' },
-  { id: 'memberships', no: 9, title: 'Professional Memberships, Awards & Recognitions', stepId: 'memberships' },
-] as const
+export const CRITERIA: readonly { code: CriterionCode; no: number; title: string; stepId: string }[] = [
+  { code: 'TEACHING_LEARNING', no: 1, title: 'Teaching & Learning', stepId: 'teaching' },
+  { code: 'STUDENT_MENTORING', no: 2, title: 'Student Mentoring, Guidance & Achievements', stepId: 'mentoring' },
+  { code: 'FDP_CERTIFICATIONS', no: 3, title: 'FDPs / Certifications', stepId: 'fdp' },
+  { code: 'ADMINISTRATIVE', no: 4, title: 'Administrative, Curriculum & Quality Contributions', stepId: 'admin' },
+  { code: 'RESEARCH_PUBLICATIONS', no: 5, title: 'Research & Publications', stepId: 'research' },
+  { code: 'FUNDED_PROJECTS', no: 6, title: 'Funded Projects / Consultancy', stepId: 'projects' },
+  { code: 'PATENTS_BOOKS_IPR', no: 7, title: 'Patents, Books & IPR', stepId: 'ipr' },
+  { code: 'OUTREACH', no: 8, title: 'Outreach', stepId: 'outreach' },
+  { code: 'MEMBERSHIPS_AWARDS', no: 9, title: 'Professional Memberships, Awards & Recognitions', stepId: 'memberships' },
+]
 
-export type CriterionId = (typeof CRITERIA)[number]['id']
+/** The five cadres of Part A "Designation (Cadre)". `short` is the Annexure A column heading. */
+export const CADRES: readonly { code: CadreCode; label: string; short: string }[] = [
+  { code: 'LECTURER', label: 'Lecturer', short: 'Lecturer' },
+  { code: 'ASSISTANT_PROFESSOR', label: 'Assistant Professor', short: 'Asst. Prof.' },
+  { code: 'SENIOR_ASSISTANT_PROFESSOR', label: 'Senior Assistant Professor', short: 'Sr. Asst. Prof.' },
+  { code: 'ASSOCIATE_PROFESSOR', label: 'Associate Professor', short: 'Assoc. Prof.' },
+  { code: 'PROFESSOR', label: 'Professor', short: 'Professor' },
+]
 
-export const CADRES = [
-  'Lecturer',
-  'Assistant Professor',
-  'Senior Assistant Professor',
-  'Associate Professor',
-  'Professor',
-] as const
-
-export type Cadre = (typeof CADRES)[number]
-
-/** Maximum marks per criterion, by cadre. Order follows CRITERIA. Every cadre totals 100. */
-export const MAX_MARKS: Record<Cadre, Record<CriterionId, number>> = {
-  'Lecturer':                   { teaching: 40, mentoring: 15, fdp: 15, admin: 15, research: 5,  projects: 0,  ipr: 0, outreach: 5, memberships: 5 },
-  'Assistant Professor':        { teaching: 30, mentoring: 12, fdp: 10, admin: 15, research: 15, projects: 5,  ipr: 3, outreach: 5, memberships: 5 },
-  'Senior Assistant Professor': { teaching: 25, mentoring: 10, fdp: 8,  admin: 15, research: 20, projects: 7,  ipr: 5, outreach: 5, memberships: 5 },
-  'Associate Professor':        { teaching: 20, mentoring: 8,  fdp: 5,  admin: 15, research: 25, projects: 10, ipr: 7, outreach: 5, memberships: 5 },
-  'Professor':                  { teaching: 15, mentoring: 5,  fdp: 5,  admin: 20, research: 25, projects: 12, ipr: 8, outreach: 5, memberships: 5 },
+/** Maximum marks per criterion, by cadre (Annexure A). Every cadre totals 100. */
+export const MAX_MARKS: Record<CadreCode, Record<CriterionCode, number>> = {
+  LECTURER:                   { TEACHING_LEARNING: 40, STUDENT_MENTORING: 15, FDP_CERTIFICATIONS: 15, ADMINISTRATIVE: 15, RESEARCH_PUBLICATIONS: 5,  FUNDED_PROJECTS: 0,  PATENTS_BOOKS_IPR: 0, OUTREACH: 5, MEMBERSHIPS_AWARDS: 5 },
+  ASSISTANT_PROFESSOR:        { TEACHING_LEARNING: 30, STUDENT_MENTORING: 12, FDP_CERTIFICATIONS: 10, ADMINISTRATIVE: 15, RESEARCH_PUBLICATIONS: 15, FUNDED_PROJECTS: 5,  PATENTS_BOOKS_IPR: 3, OUTREACH: 5, MEMBERSHIPS_AWARDS: 5 },
+  SENIOR_ASSISTANT_PROFESSOR: { TEACHING_LEARNING: 25, STUDENT_MENTORING: 10, FDP_CERTIFICATIONS: 8,  ADMINISTRATIVE: 15, RESEARCH_PUBLICATIONS: 20, FUNDED_PROJECTS: 7,  PATENTS_BOOKS_IPR: 5, OUTREACH: 5, MEMBERSHIPS_AWARDS: 5 },
+  ASSOCIATE_PROFESSOR:        { TEACHING_LEARNING: 20, STUDENT_MENTORING: 8,  FDP_CERTIFICATIONS: 5,  ADMINISTRATIVE: 15, RESEARCH_PUBLICATIONS: 25, FUNDED_PROJECTS: 10, PATENTS_BOOKS_IPR: 7, OUTREACH: 5, MEMBERSHIPS_AWARDS: 5 },
+  PROFESSOR:                  { TEACHING_LEARNING: 15, STUDENT_MENTORING: 5,  FDP_CERTIFICATIONS: 5,  ADMINISTRATIVE: 20, RESEARCH_PUBLICATIONS: 25, FUNDED_PROJECTS: 12, PATENTS_BOOKS_IPR: 8, OUTREACH: 5, MEMBERSHIPS_AWARDS: 5 },
 }
 
-/** Match a free-text cadre/designation to one of the PDF's cadres (case-insensitive, exact). */
-export function normalizeCadre(value?: string | null): Cadre | null {
-  const v = value?.trim().toLowerCase()
-  return CADRES.find((c) => c.toLowerCase() === v) ?? null
-}
+export const isCadreCode = (v?: string | null): v is CadreCode => CADRES.some((c) => c.code === v)
+
+export const cadreLabel = (code?: string | null) => CADRES.find((c) => c.code === code)?.label ?? ''
 
 /** Sum of the configured maximum marks (not a score). */
-export const totalMax = (cadre: Cadre) =>
-  CRITERIA.reduce((sum, c) => sum + MAX_MARKS[cadre][c.id], 0)
+export const totalMax = (cadre: CadreCode) => CRITERIA.reduce((sum, c) => sum + MAX_MARKS[cadre][c.code], 0)

@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import type { SupportingDocumentType } from '../contract/dto'
 import { errorMessage, services } from './api'
 import { useAsync } from './useAsync'
 import { useToast } from '../context/ToastContext'
@@ -11,19 +12,18 @@ export function useDocuments(year?: string) {
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState<UploadItem[]>([])
   const [fresh, setFresh] = useState<string[]>([])
-  const docs = (q.data ?? []).filter((d) => !year || d.year === year)
+  const docs = (q.data ?? []).filter((d) => !year || d.academicYear === year)
 
   /** Resolves with the ids of the documents that were uploaded successfully. */
-  const add = useCallback(async (files: File[], forYear: string, category = 'others'): Promise<string[]> => {
+  const add = useCallback(async (files: File[], forYear: string, documentType: SupportingDocumentType = 'OTHERS'): Promise<string[]> => {
     setBusy(true)
-    const batch: UploadItem[] = files.map((f) => ({ id: `p-${crypto.randomUUID()}`, name: f.name, size: f.size, state: 'uploading', category }))
+    const batch: UploadItem[] = files.map((f) => ({ id: `p-${crypto.randomUUID()}`, name: f.name, size: f.size, state: 'uploading', documentType }))
     setPending((p) => [...batch, ...p])
     const ids: string[] = []
     let failed = 0
     await Promise.all(files.map(async (f, i) => {
       try {
-        // NOTE: only metadata is sent in mock mode. A real backend would receive multipart file content here.
-        const d = await services.addDocument({ name: f.name, size: f.size, year: forYear, category })
+        const d = await services.addDocument({ fileName: f.name, contentType: f.type || null, sizeBytes: f.size, academicYear: forYear, documentType })
         ids.push(d.id)
         setPending((p) => p.filter((x) => x.id !== batch[i].id))
       } catch (e) {
@@ -50,7 +50,7 @@ export function useDocuments(year?: string) {
 
   const items: UploadItem[] = [
     ...pending,
-    ...docs.map((d) => ({ id: d.id, name: d.name, size: d.size, category: d.category, state: 'done' as const, fresh: fresh.includes(d.id) })),
+    ...docs.map((d) => ({ id: d.id, name: d.fileName, size: d.sizeBytes, documentType: d.documentType, state: 'done' as const, fresh: fresh.includes(d.id) })),
   ]
 
   return { docs, items, loading: q.loading, error: q.error, reload: q.reload, add, remove, busy }

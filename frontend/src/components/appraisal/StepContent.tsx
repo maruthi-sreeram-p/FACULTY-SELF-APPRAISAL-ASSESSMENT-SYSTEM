@@ -1,7 +1,8 @@
 import { useId, useState } from 'react'
 import { sectionState, type Issue, type StepState } from '../../lib/completion'
-import type { Cadre } from '../../data/scoring'
-import type { AppraisalData, AppraisalDraft, BlockValue, FieldValues, StepDef } from '../../types'
+import { SUPPORTING_DOCS_BLOCK } from '../../data/appraisalSchema'
+import type { AppraisalDto, CadreCode } from '../../contract/dto'
+import type { AppraisalData, BlockValue, FieldValues, StepDef } from '../../types'
 import type { DocumentsApi } from '../../lib/useDocuments'
 import { BlockView } from './BlockView'
 import { OfficialReview } from './OfficialReview'
@@ -18,9 +19,9 @@ export interface StepCtx {
   showErrors: boolean
   update: (stepId: string, blockId: string, v: BlockValue) => void
   docs: DocumentsApi
-  scores: AppraisalDraft['scores']
-  reviews: AppraisalDraft['reviews']
-  cadre: Cadre | null
+  scoreSheet: AppraisalDto['scoreSheet']
+  reviews: AppraisalDto['reviews']
+  cadre: CadreCode | null
   states: Record<string, StepState>
   issues: Issue[]
   notAddressed: StepDef[]
@@ -28,27 +29,27 @@ export interface StepCtx {
   onSubmit: () => void
 }
 
+const enclosedOf = (data: AppraisalData) => (data.scores?.[SUPPORTING_DOCS_BLOCK] as FieldValues | undefined) ?? {}
+
 export function StepContent({ step, ctx }: { step: StepDef; ctx: StepCtx }) {
   const notice = step.provisional && step.kind !== 'review' ? <ProvisionalNotice note={step.provisional} /> : null
 
   if (step.kind === 'official') {
-    return <>{notice}<OfficialReview kind={step.official!} review={ctx.reviews?.[step.official!]} /></>
+    return <>{notice}<OfficialReview kind={step.official!} review={ctx.reviews[step.official!]} /></>
   }
 
   if (step.kind === 'scores') {
-    const enclosed = (ctx.data.scores?.enclosed as FieldValues | undefined) ?? {}
     return (
       <>
-        <ScoreSheet scores={ctx.scores} cadre={ctx.cadre} year={ctx.year} />
-        <SupportingDocuments year={ctx.year} docs={ctx.docs} enclosed={enclosed} readOnly={ctx.readOnly}
-          onEnclosed={(v) => ctx.update('scores', 'enclosed', v)} />
+        <ScoreSheet scoreSheet={ctx.scoreSheet} cadre={ctx.cadre} year={ctx.year} />
+        <SupportingDocuments year={ctx.year} docs={ctx.docs} enclosed={enclosedOf(ctx.data)} readOnly={ctx.readOnly}
+          onEnclosed={(v) => ctx.update('scores', SUPPORTING_DOCS_BLOCK, v)} />
       </>
     )
   }
 
   if (step.kind === 'review') {
-    const enclosed = (ctx.data.scores?.enclosed as FieldValues | undefined) ?? {}
-    const count = Object.entries(enclosed).filter(([k, v]) => k !== 'othersSpecify' && v === 'true').length
+    const count = Object.entries(enclosedOf(ctx.data)).filter(([k, v]) => k !== 'othersSpecify' && v === 'true').length
     return (
       <ReviewStep year={ctx.year} states={ctx.states} issues={ctx.issues} notAddressed={ctx.notAddressed} reviews={ctx.reviews}
         enclosedCount={count} submitted={ctx.submitted} onSubmit={ctx.onSubmit} />

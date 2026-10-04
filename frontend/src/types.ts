@@ -1,30 +1,21 @@
-export type AppraisalStatus =
-  | 'not_started' | 'draft' | 'in_progress' | 'submitted' | 'under_review' | 'approved' | 'returned' | 'rejected'
-
-export interface Profile {
-  id: string
-  name: string
-  email: string
-  designation: string
-  cadre?: string
-  department: string
-  employeeId?: string
-  avatarUrl?: string | null
-}
+import type { AppraisalStatus, ScoreSheetDto } from './contract/dto'
 
 /* ------------------------------------------------------------------ */
-/* Form schema (see src/data/appraisalSchema.ts and docs/ui/)          */
+/* UI form schema (see src/data/appraisalSchema.ts and docs/ui/)       */
+/* Wire types live in src/contract/dto.ts.                             */
 /* ------------------------------------------------------------------ */
 
 export type FieldType =
   | 'text' | 'textarea' | 'number' | 'date' | 'month' | 'select'
   | 'combobox'   // free text with suggested values
-  | 'daterange'  // "Duration (From–To)": stored as `${key}From` and `${key}To`
+  | 'daterange'  // "Duration (From–To)": wire keys `${key}From` and `${key}To`
   | 'checkbox'
 
-export type Option = string | { value: string; label: string }
+/** `value` is the contract enum code, `label` the PDF wording, `short` the compact table form. */
+export type Option = string | { value: string; label: string; short?: string }
 
 export interface FieldDef {
+  /** also the contract (wire) property name */
   key: string
   label: string
   type: FieldType
@@ -36,13 +27,15 @@ export interface FieldDef {
   summary?: boolean
   /** span the full width of the form grid */
   wide?: boolean
+  /** displayed but not editable (value set by the server) */
+  readOnly?: boolean
   min?: number
   max?: number
   step?: number
 }
 
 interface BlockBase {
-  /** unique within its step */
+  /** the block's path in the contract, e.g. "teaching.entries". Unique, and used as the form-state key. */
   id: string
   title?: string
   description?: string
@@ -69,9 +62,12 @@ export interface TableBlockDef extends BlockBase {
   rowFields: FieldDef[]
 }
 
+/** Rows × columns of numbers. Row keys are contract enum codes (e.g. GOOGLE_SCHOLAR); column keys are DTO property names. */
 export interface MatrixBlockDef extends BlockBase {
   kind: 'matrix'
   rowHeader: string
+  /** name of the row-key property in each wire row, e.g. "platform" */
+  rowKeyField: string
   rows: { key: string; label: string }[]
   cols: { key: string; label: string }[]
 }
@@ -107,7 +103,8 @@ export interface StepDef {
 }
 
 /* ------------------------------------------------------------------ */
-/* Appraisal data                                                      */
+/* Form state: strings for every input. Converted to/from the wire     */
+/* shape by src/contract/mapper.ts.                                    */
 /* ------------------------------------------------------------------ */
 
 export interface Row {
@@ -117,73 +114,18 @@ export interface Row {
 
 export type FieldValues = Record<string, string>
 export type BlockValue = FieldValues | Row[]
-/** blockId → value. "<blockId>:none" holds the "nothing to report" switch. */
+/** blockId (contract path) → value. "<blockId>:none" holds the "nothing to report" switch. */
 export type StepData = Record<string, BlockValue>
 export type AppraisalData = Record<string, StepData>
 
-/** Supplied by the backend. The frontend never calculates these. */
-export interface ScoreSummary {
-  maxScore: number
-  selfScore: number
-  /** optional per-criterion self-scores keyed by criterion id */
-  criteria?: Record<string, number>
-}
-
-export interface OfficialReview {
-  remarks: string
-  /** confirmation / signature */
-  signedBy?: string
-  signedAt?: string
-}
-
-export interface AppraisalDraft {
-  year: string
-  status: AppraisalStatus
-  updatedAt: string | null
-  data: AppraisalData
-  scores: ScoreSummary | null
-  /** HoD recommendations and Principal remarks: filled by those officers, read-only here */
-  reviews?: { hod?: OfficialReview | null; principal?: OfficialReview | null }
-}
-
-export interface AppraisalSummary {
-  year: string
-  status: AppraisalStatus
-  completion: number
-  updatedAt: string | null
-}
-
+/** UI view model for the dashboard, composed in the services layer from contract endpoints. Not a wire type. */
 export interface DashboardData {
   year: string
   status: AppraisalStatus
+  /** UI hint computed from the form data; not an authoritative backend value */
   completion: number
-  scores: ScoreSummary | null
+  scoreSheet: ScoreSheetDto | null
   pendingSections: { stepId: string; title: string }[]
   documentCount: number
   activity: { id: string; text: string; at: string }[]
-}
-
-export interface DocumentItem {
-  id: string
-  name: string
-  size: number
-  uploadedAt: string
-  year: string
-  /** supporting-document checklist category id */
-  category?: string
-}
-
-export interface NotificationItem {
-  id: string
-  title: string
-  body: string
-  at: string
-  read: boolean
-}
-
-export interface ReportItem {
-  id: string
-  title: string
-  year: string
-  url: string
 }

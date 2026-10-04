@@ -73,6 +73,8 @@ flowchart TD
 | `data/scoring.ts` | Nine criteria, five cadres, Annexure A maximum marks. No scoring formula |
 | `data/supportingDocuments.ts` | The 11-item checklist |
 | `lib/completion.ts` | UI-only completeness and input-sanity logic; submission gate (provisional) |
+| `contract/dto.ts`, `contract/mapper.ts` | Wire types of the PROPOSED backend contract and the schema-driven form ↔ wire conversion |
+| `lib/api.ts`, `lib/mockAdapter.ts` | Services calling the contract endpoints; mock backend returning the same DTOs |
 | `lib/useDocuments.ts`, `lib/files.ts` | Upload state and file validation |
 
 ## Hooks / providers
