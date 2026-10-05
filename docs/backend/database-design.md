@@ -4,7 +4,7 @@
 
 Related: [domain-model.md](domain-model.md) · [api-contract.md](api-contract.md) · [service-boundaries.md](service-boundaries.md)
 
-**Verified:** every `sql` block in this document was executed, in order, on a real PostgreSQL engine (PGlite, a WebAssembly build of PostgreSQL): 4 schemas, 35 tables, no errors. The Annexure A integrity query returned zero rows (each cadre = 100 over 9 criteria), and 14 negative probes were rejected as intended (second appraisal for the same faculty + year, two "current" years, bad year label, unknown cadre / indexing / document type / role, pass % > 100, duration end before start, duplicate research-metric platform, a tenth scoring criterion, self-score above max, review role other than HOD/PRINCIPAL). The `version` bump, `updated_at` trigger, score-sheet view and cascade delete were also exercised.
+**Verified:** every `sql` block in this document was executed, in order, on a real PostgreSQL engine (PGlite, a WebAssembly build of PostgreSQL): 4 schemas, 38 tables, no errors. The migration tests returned zero offending rows (each cadre = 100 over 9 criteria; every set of components adds up to its criterion maximum) and listed exactly the four criteria without components (B6 to B9). Negative probes were rejected as intended: second appraisal for the same faculty + year, two "current" years, bad year label, unknown cadre / indexing / document type / role, pass % > 100, duration end before start, duplicate research-metric platform, a tenth criterion, self-score above max (criterion and component), review role other than HOD/PRINCIPAL, a duplicate component number, a duplicate template version, and **a component set that does not add up** (rejected at COMMIT, while an edit that stays balanced inside one transaction is accepted). Also exercised: template versioning (a v2 template alongside v1), an appraisal remembering its template, copying of criterion and component maxima onto the appraisal's score rows, the `version` bump, `updated_at` trigger, score-sheet view and cascade delete.
 
 ## 1. Decisions
 
@@ -21,6 +21,8 @@ Related: [domain-model.md](domain-model.md) · [api-contract.md](api-contract.md
 | Numbers | `numeric` for percentages/hours/money, `integer` for counts, with range checks | exact decimals; sanity checks mirror the UI |
 | Dates | `date` for dates; month-year stored as `date` = first day of month (API `YYYY-MM`) | native comparison/sorting |
 | Concurrency | `appraisals.version`; write with `UPDATE … WHERE id = $1 AND version = $2` | `If-Match` / `412` |
+| Scoring rules | **Versioned `scoring_templates`** → cadre → criterion → **component** → maximum marks; each academic year points at the template in force; each appraisal copies that template id and, when scored, copies the maxima onto its own score rows | rules can change by year or version without rewriting history. See §10 |
+| Scoring formula | **none stored, none modelled.** Only maximum marks (criterion and component) and self-scores supplied by the backend | the source documents define no calculation. REQUIRES COLLEGE CONFIRMATION |
 | Nullability | content columns are **nullable**; only keys and bookkeeping are `NOT NULL` | "which fields are required" is a PROVISIONAL UI rule (api-contract §9 #1), so the database must not hard-code it |
 | Lengths | contract maxima enforced in the API; add `CHECK (char_length(col) <= n)` once the college confirms limits | avoids freezing guesses |
 
@@ -42,6 +44,12 @@ flowchart TB
     appraisals --> appraisal_summaries
     appraisals --> appraisal_section_flags
     appraisals --> appraisal_scores
+    appraisals --> appraisal_component_scores
+    scoring_templates --> academic_years
+    scoring_templates --> appraisals
+    scoring_templates --> scoring_criterion_marks
+    scoring_criterion_marks --> scoring_components
+    scoring_components --> appraisal_component_scores
     appraisals --> declarations
     appraisals --> appraisal_reviews
     appraisals --> document_checklist_ticks
@@ -52,7 +60,7 @@ flowchart TB
     appraisals --> journal_publications & conference_papers & research_metrics & research_guidance & phd_progress
     appraisals --> funded_projects & patents_ipr & books_chapters
     appraisals --> outreach_activities & memberships_awards & other_contributions
-    score_criteria --> cadre_max_marks
+    score_criteria --> scoring_criterion_marks
     score_criteria --> appraisal_scores
   end
   subgraph documents
@@ -137,66 +145,257 @@ CREATE DOMAIN appraisal.doc_type_code          AS text CHECK (VALUE IN
 CREATE DOMAIN appraisal.percent_value  AS numeric(5,2) CHECK (VALUE BETWEEN 0 AND 100);   -- UI sanity rule
 CREATE DOMAIN appraisal.count_value    AS integer      CHECK (VALUE >= 0);
 
-CREATE TABLE appraisal.academic_years (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  label       text NOT NULL UNIQUE CHECK (label ~ '^\d{4}-\d{2}$'),    -- '2025-26'
-  is_current  boolean NOT NULL DEFAULT false                          -- PROVISIONAL
-);
-CREATE UNIQUE INDEX uq_one_current_year ON appraisal.academic_years (is_current) WHERE is_current;
+-- Scoring rules are VERSIONED so they can change by academic year without rewriting history.
+-- Conceptual chain: ScoringTemplate -> Cadre -> Criterion -> ScoringComponent -> MaximumMarks.
+CREATE TABLE appraisal.scoring_templates (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code             text NOT NULL,
+  version          integer NOT NULL CHECK (version >= 1),
+  name             text NOT NULL,
+  source_document  text,                                   -- which college document defined it
+  status           text NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','ACTIVE','RETIRED')),
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (code, version)
+);   -- ACTIVE and RETIRED templates are immutable; a rule change is a NEW version (service rule, PROPOSED)
 
--- Annexure A ---------------------------------------------------------------
-CREATE TABLE appraisal.score_criteria (
+CREATE TABLE appraisal.score_criteria (                    -- the nine criteria of the score sheet; no tenth
   code    appraisal.criterion_code PRIMARY KEY,
   number  smallint NOT NULL UNIQUE CHECK (number BETWEEN 1 AND 9),
   title   text NOT NULL
 );
 
-CREATE TABLE appraisal.cadre_max_marks (
-  cadre      appraisal.cadre_code    NOT NULL,
-  criterion  appraisal.criterion_code NOT NULL REFERENCES appraisal.score_criteria(code),
-  max_marks  smallint NOT NULL CHECK (max_marks >= 0),
-  PRIMARY KEY (cadre, criterion)
+-- Criterion maximum marks by cadre (Annexure A)
+CREATE TABLE appraisal.scoring_criterion_marks (
+  template_id  uuid NOT NULL REFERENCES appraisal.scoring_templates(id),
+  cadre        appraisal.cadre_code     NOT NULL,
+  criterion    appraisal.criterion_code NOT NULL REFERENCES appraisal.score_criteria(code),
+  max_marks    smallint NOT NULL CHECK (max_marks >= 0),
+  PRIMARY KEY (template_id, cadre, criterion)
 );
+
+-- Component maximum marks (scoring annexure, B1 to B5 only). No row exists for B6 to B9.
+-- `component_no` is the position in the annexure listing for that cadre and criterion. Wording and number of
+-- components differ between cadres, so a component is NOT comparable across cadres by number.
+CREATE TABLE appraisal.scoring_components (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id   uuid NOT NULL,
+  cadre         appraisal.cadre_code     NOT NULL,
+  criterion     appraisal.criterion_code NOT NULL,
+  component_no  smallint NOT NULL CHECK (component_no >= 1),
+  label         text NOT NULL,                              -- verbatim from the annexure
+  max_marks     smallint NOT NULL CHECK (max_marks >= 0),
+  UNIQUE (template_id, cadre, criterion, component_no),
+  FOREIGN KEY (template_id, cadre, criterion)
+    REFERENCES appraisal.scoring_criterion_marks (template_id, cadre, criterion)
+);
+
+-- Where components exist they must add up to the criterion maximum. Checked at COMMIT so a template
+-- can be loaded or edited in one transaction. (Criteria without components, B6 to B9, are not checked.)
+CREATE FUNCTION appraisal.check_component_sums() RETURNS trigger LANGUAGE plpgsql AS
+$$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT m.cadre, m.criterion, m.max_marks, SUM(c.max_marks) AS comp_sum
+    FROM appraisal.scoring_criterion_marks m
+    JOIN appraisal.scoring_components c USING (template_id, cadre, criterion)
+    WHERE m.template_id = COALESCE(NEW.template_id, OLD.template_id)
+    GROUP BY m.cadre, m.criterion, m.max_marks
+    HAVING SUM(c.max_marks) <> m.max_marks
+  LOOP
+    RAISE EXCEPTION 'components of % / % add up to % but the criterion maximum is %', r.cadre, r.criterion, r.comp_sum, r.max_marks;
+  END LOOP;
+  RETURN NULL;
+END
+$$;
+CREATE CONSTRAINT TRIGGER trg_components_sum AFTER INSERT OR UPDATE OR DELETE ON appraisal.scoring_components
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION appraisal.check_component_sums();
+CREATE CONSTRAINT TRIGGER trg_criterion_marks_sum AFTER UPDATE OR DELETE ON appraisal.scoring_criterion_marks
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION appraisal.check_component_sums();
+
+CREATE TABLE appraisal.academic_years (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  label                text NOT NULL UNIQUE CHECK (label ~ '^\d{4}-\d{2}$'),    -- '2025-26'
+  is_current           boolean NOT NULL DEFAULT false,                         -- PROVISIONAL
+  scoring_template_id  uuid REFERENCES appraisal.scoring_templates(id)         -- the rule set in force for this year (PROVISIONAL assignment)
+);
+CREATE UNIQUE INDEX uq_one_current_year ON appraisal.academic_years (is_current) WHERE is_current;
 ```
 
-### 4.2 Seed data: criteria and Annexure A (from the PDF)
+### 4.2 Seed data: criteria, scoring template, Annexure A and the B1 to B5 components
+
+Generated from `frontend/src/data/scoring.ts`, which was checked against the source documents (45 criterion maxima, 102 components).
 
 ```sql
 INSERT INTO appraisal.score_criteria (code, number, title) VALUES
- ('TEACHING_LEARNING',     1, 'Teaching & Learning'),
- ('STUDENT_MENTORING',     2, 'Student Mentoring, Guidance & Achievements'),
- ('FDP_CERTIFICATIONS',    3, 'FDPs / Certifications'),
- ('ADMINISTRATIVE',        4, 'Administrative, Curriculum & Quality Contributions'),
+ ('TEACHING_LEARNING', 1, 'Teaching & Learning'),
+ ('STUDENT_MENTORING', 2, 'Student Mentoring, Guidance & Achievements'),
+ ('FDP_CERTIFICATIONS', 3, 'FDPs / Certifications'),
+ ('ADMINISTRATIVE', 4, 'Administrative, Curriculum & Quality Contributions'),
  ('RESEARCH_PUBLICATIONS', 5, 'Research & Publications'),
- ('FUNDED_PROJECTS',       6, 'Funded Projects / Consultancy'),
- ('PATENTS_BOOKS_IPR',     7, 'Patents, Books & IPR'),
- ('OUTREACH',              8, 'Outreach'),
- ('MEMBERSHIPS_AWARDS',    9, 'Professional Memberships, Awards & Recognitions');
+ ('FUNDED_PROJECTS', 6, 'Funded Projects / Consultancy'),
+ ('PATENTS_BOOKS_IPR', 7, 'Patents, Books & IPR'),
+ ('OUTREACH', 8, 'Outreach'),
+ ('MEMBERSHIPS_AWARDS', 9, 'Professional Memberships, Awards & Recognitions');
 
-INSERT INTO appraisal.cadre_max_marks (cadre, criterion, max_marks) VALUES
- ('LECTURER','TEACHING_LEARNING',40),('LECTURER','STUDENT_MENTORING',15),('LECTURER','FDP_CERTIFICATIONS',15),
- ('LECTURER','ADMINISTRATIVE',15),('LECTURER','RESEARCH_PUBLICATIONS',5),('LECTURER','FUNDED_PROJECTS',0),
- ('LECTURER','PATENTS_BOOKS_IPR',0),('LECTURER','OUTREACH',5),('LECTURER','MEMBERSHIPS_AWARDS',5),
+-- One versioned template. Source: Annexure A (criterion maxima) + "Scoring criteria B1 to B5 (Annexure A & B)" (components).
+INSERT INTO appraisal.scoring_templates (code, version, name, source_document, status) VALUES
+ ('SVEC-SCORING', 1, 'Sri Vasavi faculty self-appraisal scoring, v1',
+  'Faculty Self-Appraisal & Assessment Report (Annexure A); Scoring criteria B1 to B5 (Annexure A & B)', 'ACTIVE');
 
- ('ASSISTANT_PROFESSOR','TEACHING_LEARNING',30),('ASSISTANT_PROFESSOR','STUDENT_MENTORING',12),('ASSISTANT_PROFESSOR','FDP_CERTIFICATIONS',10),
- ('ASSISTANT_PROFESSOR','ADMINISTRATIVE',15),('ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',15),('ASSISTANT_PROFESSOR','FUNDED_PROJECTS',5),
- ('ASSISTANT_PROFESSOR','PATENTS_BOOKS_IPR',3),('ASSISTANT_PROFESSOR','OUTREACH',5),('ASSISTANT_PROFESSOR','MEMBERSHIPS_AWARDS',5),
+-- Criterion maximum marks by cadre (Annexure A): 5 cadres x 9 criteria = 45 rows
+INSERT INTO appraisal.scoring_criterion_marks (template_id, cadre, criterion, max_marks)
+SELECT t.id, v.cadre, v.criterion, v.max_marks
+FROM appraisal.scoring_templates t,
+ (VALUES
+ ('LECTURER','TEACHING_LEARNING',40),('LECTURER','STUDENT_MENTORING',15),('LECTURER','FDP_CERTIFICATIONS',15),('LECTURER','ADMINISTRATIVE',15),('LECTURER','RESEARCH_PUBLICATIONS',5),('LECTURER','FUNDED_PROJECTS',0),('LECTURER','PATENTS_BOOKS_IPR',0),('LECTURER','OUTREACH',5),('LECTURER','MEMBERSHIPS_AWARDS',5),
+ ('ASSISTANT_PROFESSOR','TEACHING_LEARNING',30),('ASSISTANT_PROFESSOR','STUDENT_MENTORING',12),('ASSISTANT_PROFESSOR','FDP_CERTIFICATIONS',10),('ASSISTANT_PROFESSOR','ADMINISTRATIVE',15),('ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',15),('ASSISTANT_PROFESSOR','FUNDED_PROJECTS',5),('ASSISTANT_PROFESSOR','PATENTS_BOOKS_IPR',3),('ASSISTANT_PROFESSOR','OUTREACH',5),('ASSISTANT_PROFESSOR','MEMBERSHIPS_AWARDS',5),
+ ('SENIOR_ASSISTANT_PROFESSOR','TEACHING_LEARNING',25),('SENIOR_ASSISTANT_PROFESSOR','STUDENT_MENTORING',10),('SENIOR_ASSISTANT_PROFESSOR','FDP_CERTIFICATIONS',8),('SENIOR_ASSISTANT_PROFESSOR','ADMINISTRATIVE',15),('SENIOR_ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',20),('SENIOR_ASSISTANT_PROFESSOR','FUNDED_PROJECTS',7),('SENIOR_ASSISTANT_PROFESSOR','PATENTS_BOOKS_IPR',5),('SENIOR_ASSISTANT_PROFESSOR','OUTREACH',5),('SENIOR_ASSISTANT_PROFESSOR','MEMBERSHIPS_AWARDS',5),
+ ('ASSOCIATE_PROFESSOR','TEACHING_LEARNING',20),('ASSOCIATE_PROFESSOR','STUDENT_MENTORING',8),('ASSOCIATE_PROFESSOR','FDP_CERTIFICATIONS',5),('ASSOCIATE_PROFESSOR','ADMINISTRATIVE',15),('ASSOCIATE_PROFESSOR','RESEARCH_PUBLICATIONS',25),('ASSOCIATE_PROFESSOR','FUNDED_PROJECTS',10),('ASSOCIATE_PROFESSOR','PATENTS_BOOKS_IPR',7),('ASSOCIATE_PROFESSOR','OUTREACH',5),('ASSOCIATE_PROFESSOR','MEMBERSHIPS_AWARDS',5),
+ ('PROFESSOR','TEACHING_LEARNING',15),('PROFESSOR','STUDENT_MENTORING',5),('PROFESSOR','FDP_CERTIFICATIONS',5),('PROFESSOR','ADMINISTRATIVE',20),('PROFESSOR','RESEARCH_PUBLICATIONS',25),('PROFESSOR','FUNDED_PROJECTS',12),('PROFESSOR','PATENTS_BOOKS_IPR',8),('PROFESSOR','OUTREACH',5),('PROFESSOR','MEMBERSHIPS_AWARDS',5)
+ ) AS v(cadre, criterion, max_marks)
+WHERE t.code = 'SVEC-SCORING' AND t.version = 1;
 
- ('SENIOR_ASSISTANT_PROFESSOR','TEACHING_LEARNING',25),('SENIOR_ASSISTANT_PROFESSOR','STUDENT_MENTORING',10),('SENIOR_ASSISTANT_PROFESSOR','FDP_CERTIFICATIONS',8),
- ('SENIOR_ASSISTANT_PROFESSOR','ADMINISTRATIVE',15),('SENIOR_ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',20),('SENIOR_ASSISTANT_PROFESSOR','FUNDED_PROJECTS',7),
- ('SENIOR_ASSISTANT_PROFESSOR','PATENTS_BOOKS_IPR',5),('SENIOR_ASSISTANT_PROFESSOR','OUTREACH',5),('SENIOR_ASSISTANT_PROFESSOR','MEMBERSHIPS_AWARDS',5),
+-- Component maximum marks, B1 to B5 only (scoring annexure): 102 rows. Labels verbatim.
+-- B6 to B9 have NO component rows: no breakdown is defined for them.
+INSERT INTO appraisal.scoring_components (template_id, cadre, criterion, component_no, label, max_marks)
+SELECT t.id, v.cadre, v.criterion, v.component_no, v.label, v.max_marks
+FROM appraisal.scoring_templates t,
+ (VALUES
+ ('LECTURER','TEACHING_LEARNING',1,'Workload & course delivery',10),
+ ('LECTURER','TEACHING_LEARNING',2,'Pass/result performance',10),
+ ('LECTURER','TEACHING_LEARNING',3,'Student feedback',8),
+ ('LECTURER','TEACHING_LEARNING',4,'Course-file/assessment quality',6),
+ ('LECTURER','TEACHING_LEARNING',5,'Innovative/remedial/advanced-learning practices',6),
+ ('LECTURER','STUDENT_MENTORING',1,'Mentoring records & attendance/academic follow-up',5),
+ ('LECTURER','STUDENT_MENTORING',2,'Project/lab guidance',4),
+ ('LECTURER','STUDENT_MENTORING',3,'Student achievement support',4),
+ ('LECTURER','STUDENT_MENTORING',4,'Parent/student support evidence',2),
+ ('LECTURER','FDP_CERTIFICATIONS',1,'FDP/workshops/training',10),
+ ('LECTURER','FDP_CERTIFICATIONS',2,'Relevant certification',5),
+ ('LECTURER','ADMINISTRATIVE',1,'Department responsibilities',5),
+ ('LECTURER','ADMINISTRATIVE',2,'Institute committees/events',3),
+ ('LECTURER','ADMINISTRATIVE',3,'Curriculum/BoS/academic support',3),
+ ('LECTURER','ADMINISTRATIVE',4,'Quality/accreditation contributions',2),
+ ('LECTURER','ADMINISTRATIVE',5,'Measurable institutional/student-service contribution',2),
+ ('LECTURER','RESEARCH_PUBLICATIONS',1,'Quality publications',3),
+ ('LECTURER','RESEARCH_PUBLICATIONS',2,'Citations/research profile',1),
+ ('LECTURER','RESEARCH_PUBLICATIONS',3,'Research activity/collaboration',1),
 
- ('ASSOCIATE_PROFESSOR','TEACHING_LEARNING',20),('ASSOCIATE_PROFESSOR','STUDENT_MENTORING',8),('ASSOCIATE_PROFESSOR','FDP_CERTIFICATIONS',5),
- ('ASSOCIATE_PROFESSOR','ADMINISTRATIVE',15),('ASSOCIATE_PROFESSOR','RESEARCH_PUBLICATIONS',25),('ASSOCIATE_PROFESSOR','FUNDED_PROJECTS',10),
- ('ASSOCIATE_PROFESSOR','PATENTS_BOOKS_IPR',7),('ASSOCIATE_PROFESSOR','OUTREACH',5),('ASSOCIATE_PROFESSOR','MEMBERSHIPS_AWARDS',5),
+ ('ASSISTANT_PROFESSOR','TEACHING_LEARNING',1,'Workload & course delivery',8),
+ ('ASSISTANT_PROFESSOR','TEACHING_LEARNING',2,'Pass/result performance',8),
+ ('ASSISTANT_PROFESSOR','TEACHING_LEARNING',3,'Feedback',6),
+ ('ASSISTANT_PROFESSOR','TEACHING_LEARNING',4,'Course-file/assessment quality',4),
+ ('ASSISTANT_PROFESSOR','TEACHING_LEARNING',5,'Innovation/remedial/advanced learning',4),
+ ('ASSISTANT_PROFESSOR','STUDENT_MENTORING',1,'Mentoring',4),
+ ('ASSISTANT_PROFESSOR','STUDENT_MENTORING',2,'Project guidance',3),
+ ('ASSISTANT_PROFESSOR','STUDENT_MENTORING',3,'Student achievements',3),
+ ('ASSISTANT_PROFESSOR','STUDENT_MENTORING',4,'Academic/placement/competitive-exam support',2),
+ ('ASSISTANT_PROFESSOR','FDP_CERTIFICATIONS',1,'FDP/workshops/training',6),
+ ('ASSISTANT_PROFESSOR','FDP_CERTIFICATIONS',2,'Relevant certification',4),
+ ('ASSISTANT_PROFESSOR','ADMINISTRATIVE',1,'Department responsibilities',4),
+ ('ASSISTANT_PROFESSOR','ADMINISTRATIVE',2,'Institute roles',3),
+ ('ASSISTANT_PROFESSOR','ADMINISTRATIVE',3,'Curriculum/BoS',3),
+ ('ASSISTANT_PROFESSOR','ADMINISTRATIVE',4,'Quality/accreditation',3),
+ ('ASSISTANT_PROFESSOR','ADMINISTRATIVE',5,'Measurable institutional contribution',2),
+ ('ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',1,'SCI/SCIE/quality Scopus publications',8),
+ ('ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',2,'Other eligible publications',2),
+ ('ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',3,'Citations/profile',2),
+ ('ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',4,'Conference/research dissemination',1),
+ ('ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',5,'Research collaboration/academic output',2),
 
- ('PROFESSOR','TEACHING_LEARNING',15),('PROFESSOR','STUDENT_MENTORING',5),('PROFESSOR','FDP_CERTIFICATIONS',5),
- ('PROFESSOR','ADMINISTRATIVE',20),('PROFESSOR','RESEARCH_PUBLICATIONS',25),('PROFESSOR','FUNDED_PROJECTS',12),
- ('PROFESSOR','PATENTS_BOOKS_IPR',8),('PROFESSOR','OUTREACH',5),('PROFESSOR','MEMBERSHIPS_AWARDS',5);
+ ('SENIOR_ASSISTANT_PROFESSOR','TEACHING_LEARNING',1,'Workload & course delivery',6),
+ ('SENIOR_ASSISTANT_PROFESSOR','TEACHING_LEARNING',2,'Result performance',6),
+ ('SENIOR_ASSISTANT_PROFESSOR','TEACHING_LEARNING',3,'Feedback',5),
+ ('SENIOR_ASSISTANT_PROFESSOR','TEACHING_LEARNING',4,'Course/assessment quality',4),
+ ('SENIOR_ASSISTANT_PROFESSOR','TEACHING_LEARNING',5,'Innovation/academic contribution',4),
+ ('SENIOR_ASSISTANT_PROFESSOR','STUDENT_MENTORING',1,'Mentoring quality',3),
+ ('SENIOR_ASSISTANT_PROFESSOR','STUDENT_MENTORING',2,'Project guidance',3),
+ ('SENIOR_ASSISTANT_PROFESSOR','STUDENT_MENTORING',3,'Student achievements',2),
+ ('SENIOR_ASSISTANT_PROFESSOR','STUDENT_MENTORING',4,'Academic/placement support',2),
+ ('SENIOR_ASSISTANT_PROFESSOR','FDP_CERTIFICATIONS',1,'FDP/workshops/training',5),
+ ('SENIOR_ASSISTANT_PROFESSOR','FDP_CERTIFICATIONS',2,'Certification',3),
+ ('SENIOR_ASSISTANT_PROFESSOR','ADMINISTRATIVE',1,'Department/institute responsibility',4),
+ ('SENIOR_ASSISTANT_PROFESSOR','ADMINISTRATIVE',2,'Curriculum/BoS',3),
+ ('SENIOR_ASSISTANT_PROFESSOR','ADMINISTRATIVE',3,'Quality/accreditation',4),
+ ('SENIOR_ASSISTANT_PROFESSOR','ADMINISTRATIVE',4,'Committee/event leadership',2),
+ ('SENIOR_ASSISTANT_PROFESSOR','ADMINISTRATIVE',5,'Institutional improvement',2),
+ ('SENIOR_ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',1,'SCI/SCIE/quality Scopus publications',10),
+ ('SENIOR_ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',2,'Citations/profile',3),
+ ('SENIOR_ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',3,'Conference/research dissemination',2),
+ ('SENIOR_ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',4,'Research collaboration',2),
+ ('SENIOR_ASSISTANT_PROFESSOR','RESEARCH_PUBLICATIONS',5,'Ph.D./PG research guidance',3),
 
--- Migration test: must return ZERO rows (every cadre totals 100, and has exactly 9 criteria)
-SELECT cadre FROM appraisal.cadre_max_marks
-GROUP BY cadre HAVING SUM(max_marks) <> 100 OR COUNT(*) <> 9;
+ ('ASSOCIATE_PROFESSOR','TEACHING_LEARNING',1,'Course delivery/workload',5),
+ ('ASSOCIATE_PROFESSOR','TEACHING_LEARNING',2,'Result/academic quality',5),
+ ('ASSOCIATE_PROFESSOR','TEACHING_LEARNING',3,'Feedback',4),
+ ('ASSOCIATE_PROFESSOR','TEACHING_LEARNING',4,'Course/assessment development',3),
+ ('ASSOCIATE_PROFESSOR','TEACHING_LEARNING',5,'Innovative teaching/academic leadership',3),
+ ('ASSOCIATE_PROFESSOR','STUDENT_MENTORING',1,'Mentoring',2),
+ ('ASSOCIATE_PROFESSOR','STUDENT_MENTORING',2,'Project/PG guidance',2),
+ ('ASSOCIATE_PROFESSOR','STUDENT_MENTORING',3,'Student achievements',2),
+ ('ASSOCIATE_PROFESSOR','STUDENT_MENTORING',4,'Advanced learner/placement/research support',2),
+ ('ASSOCIATE_PROFESSOR','FDP_CERTIFICATIONS',1,'FDP/workshops/training',3),
+ ('ASSOCIATE_PROFESSOR','FDP_CERTIFICATIONS',2,'Certification',2),
+ ('ASSOCIATE_PROFESSOR','ADMINISTRATIVE',1,'Academic/administrative leadership',4),
+ ('ASSOCIATE_PROFESSOR','ADMINISTRATIVE',2,'Curriculum/BoS',3),
+ ('ASSOCIATE_PROFESSOR','ADMINISTRATIVE',3,'Quality/accreditation',4),
+ ('ASSOCIATE_PROFESSOR','ADMINISTRATIVE',4,'Committee/institutional leadership',2),
+ ('ASSOCIATE_PROFESSOR','ADMINISTRATIVE',5,'Measurable improvement',2),
+ ('ASSOCIATE_PROFESSOR','RESEARCH_PUBLICATIONS',1,'Quality journal publications',12),
+ ('ASSOCIATE_PROFESSOR','RESEARCH_PUBLICATIONS',2,'Citations/research impact',4),
+ ('ASSOCIATE_PROFESSOR','RESEARCH_PUBLICATIONS',3,'Research guidance',4),
+ ('ASSOCIATE_PROFESSOR','RESEARCH_PUBLICATIONS',4,'Conference/research dissemination',2),
+ ('ASSOCIATE_PROFESSOR','RESEARCH_PUBLICATIONS',5,'Collaboration/research leadership',3),
+
+ ('PROFESSOR','TEACHING_LEARNING',1,'Teaching quality/workload',4),
+ ('PROFESSOR','TEACHING_LEARNING',2,'Result/academic quality',4),
+ ('PROFESSOR','TEACHING_LEARNING',3,'Feedback',3),
+ ('PROFESSOR','TEACHING_LEARNING',4,'Curriculum/assessment contribution',2),
+ ('PROFESSOR','TEACHING_LEARNING',5,'Innovative teaching/academic leadership',2),
+ ('PROFESSOR','STUDENT_MENTORING',1,'Academic/research mentoring',2),
+ ('PROFESSOR','STUDENT_MENTORING',2,'Student/project/PG guidance',1),
+ ('PROFESSOR','STUDENT_MENTORING',3,'Significant student achievements',2),
+ ('PROFESSOR','FDP_CERTIFICATIONS',1,'Relevant advanced FDP/training',3),
+ ('PROFESSOR','FDP_CERTIFICATIONS',2,'Certification/academic updating',2),
+ ('PROFESSOR','ADMINISTRATIVE',1,'Academic/institutional leadership',5),
+ ('PROFESSOR','ADMINISTRATIVE',2,'Curriculum/BoS',4),
+ ('PROFESSOR','ADMINISTRATIVE',3,'Quality/accreditation',5),
+ ('PROFESSOR','ADMINISTRATIVE',4,'Major institutional responsibility',3),
+ ('PROFESSOR','ADMINISTRATIVE',5,'Measurable institutional development',3),
+ ('PROFESSOR','RESEARCH_PUBLICATIONS',1,'Quality journal publications',10),
+ ('PROFESSOR','RESEARCH_PUBLICATIONS',2,'Citations/research impact',5),
+ ('PROFESSOR','RESEARCH_PUBLICATIONS',3,'Ph.D./PG guidance',5),
+ ('PROFESSOR','RESEARCH_PUBLICATIONS',4,'Research leadership/collaboration',3),
+ ('PROFESSOR','RESEARCH_PUBLICATIONS',5,'Conference/editorial/reviewer contributions',2)
+ ) AS v(cadre, criterion, component_no, label, max_marks)
+WHERE t.code = 'SVEC-SCORING' AND t.version = 1;
+
+-- PROVISIONAL: which academic years use which template is a college decision.
+-- Placeholder: assign template v1 to every year that exists when the migration runs.
+UPDATE appraisal.academic_years
+SET scoring_template_id = (SELECT id FROM appraisal.scoring_templates WHERE code = 'SVEC-SCORING' AND version = 1);
+```
+
+Migration tests (run in CI; the first two must return **zero rows**; the third is informational):
+
+```sql
+-- 1. every cadre has exactly 9 criteria totalling 100
+SELECT template_id, cadre FROM appraisal.scoring_criterion_marks
+GROUP BY template_id, cadre HAVING SUM(max_marks) <> 100 OR COUNT(*) <> 9;
+
+-- 2. wherever components exist, they add up to the criterion maximum (also enforced by trg_components_sum)
+SELECT m.template_id, m.cadre, m.criterion
+FROM appraisal.scoring_criterion_marks m
+JOIN appraisal.scoring_components c USING (template_id, cadre, criterion)
+GROUP BY m.template_id, m.cadre, m.criterion, m.max_marks
+HAVING SUM(c.max_marks) <> m.max_marks;
+
+-- 3. INFORMATIONAL: criteria that have NO components. Expected for every cadre: the four B6 to B9 criteria
+SELECT DISTINCT m.criterion
+FROM appraisal.scoring_criterion_marks m
+LEFT JOIN appraisal.scoring_components c USING (template_id, cadre, criterion)
+WHERE c.id IS NULL ORDER BY 1;
 ```
 
 ### 4.3 The appraisal and its 1:1 parts
@@ -206,6 +405,7 @@ CREATE TABLE appraisal.appraisals (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   faculty_id        uuid NOT NULL,                                   -- faculty.faculty.id (by value)
   academic_year_id  uuid NOT NULL REFERENCES appraisal.academic_years(id),
+  scoring_template_id uuid REFERENCES appraisal.scoring_templates(id),   -- copied from the year at creation: later rule changes never touch this appraisal
   status            text NOT NULL DEFAULT 'DRAFT'
                     CHECK (status IN ('DRAFT','SUBMITTED','UNDER_REVIEW','APPROVED','RETURNED','REJECTED')),
                     -- 'NOT_STARTED' is never stored. Only DRAFT and SUBMITTED are certain; the rest PROVISIONAL.
@@ -456,7 +656,7 @@ CREATE TABLE appraisal.document_checklist_ticks (
   PRIMARY KEY (appraisal_id, document_type)
 );
 
--- Score sheet. Backend-owned. PDF defines maximum marks only; NO formula.
+-- Score sheet, criterion level. Backend-owned. The documents define maximum marks (criterion and component); NO formula.
 CREATE TABLE appraisal.appraisal_scores (
   appraisal_id  uuid NOT NULL REFERENCES appraisal.appraisals(id) ON DELETE CASCADE,
   criterion     appraisal.criterion_code NOT NULL REFERENCES appraisal.score_criteria(code),
@@ -471,6 +671,19 @@ SELECT s.appraisal_id,
        SUM(s.max_marks)  AS max_score,
        CASE WHEN COUNT(s.self_score) = COUNT(*) THEN SUM(s.self_score) END AS self_score
 FROM appraisal.appraisal_scores s GROUP BY s.appraisal_id;
+
+-- Component-level scores (B1 to B5). Backend-owned. NO formula: how a component score is produced is
+-- REQUIRES COLLEGE CONFIRMATION. Rows exist only for criteria that have components.
+CREATE TABLE appraisal.appraisal_component_scores (
+  appraisal_id  uuid NOT NULL REFERENCES appraisal.appraisals(id) ON DELETE CASCADE,
+  component_id  uuid NOT NULL REFERENCES appraisal.scoring_components(id),
+  max_marks     smallint NOT NULL CHECK (max_marks >= 0),      -- COPIED from the component when scored (history-safe)
+  self_score    numeric(5,2) CHECK (self_score >= 0),          -- NULL until the backend supplies it; granularity undefined, so numeric
+  PRIMARY KEY (appraisal_id, component_id),
+  CHECK (self_score IS NULL OR self_score <= max_marks)        -- sanity check; PROVISIONAL
+);
+-- Deliberately NO constraint or trigger tying appraisal_scores.self_score to the sum of its component scores:
+-- whether a criterion score is that sum REQUIRES COLLEGE CONFIRMATION. The frontend never sums them.
 
 -- HoD and Principal. PROVISIONAL workflow.
 CREATE TABLE appraisal.appraisal_reviews (
@@ -573,7 +786,10 @@ CREATE TABLE auth.user_roles (
 | `supportingDocuments.enclosed` / `othersSpecify` | `document_checklist_ticks` / `appraisal_summaries.documents_others_specify` |
 | `declaration` | `declarations` |
 | `nothingToReport[]` | `appraisal_section_flags` |
-| `scoreSheet` (read-only) | `appraisal_scores` + `v_score_sheet` |
+| `scoreSheet` (read-only): criterion rows | `appraisal_scores` + `v_score_sheet` |
+| `scoreSheet.criteria[].components[]` (read-only, B1 to B5) | `appraisal_component_scores` joined to `scoring_components` (`componentNo`, `label`, `maxMarks`) |
+| `scoreSheet.scoringTemplate` | `appraisals.scoring_template_id` → `scoring_templates` |
+| `GET /reference/scoring?academicYear=` | `academic_years.scoring_template_id` → `scoring_templates`, `scoring_criterion_marks`, `scoring_components` |
 | `reviews.hod` / `reviews.principal` (read-only) | `appraisal_reviews` (`role`) |
 | `GET /appraisals/{id}/activity` | `appraisal_events` |
 | `DocumentDto` | `documents.documents` |
@@ -597,9 +813,53 @@ CREATE TABLE auth.user_roles (
 | Topic | Note |
 |---|---|
 | Migrations | versioned, forward-only (tool-neutral). Seeds for departments, criteria, cadre maxima, document types live in migrations |
-| Test | the Annexure A integrity query in §4.2 must return zero rows in CI |
+| Test | the three migration tests in §4.2 run in CI: tests 1 and 2 must return zero rows; test 3 must list exactly the four B6 to B9 criteria |
 | Privileges | each service role has rights on its own schema only; reporting access via a read-only role |
 | Backups | daily full + WAL archiving; documents' files are backed up with the object/file store, not the database |
 | Retention | how long appraisals and files are kept is **not defined** by the PDF (open question) |
 | Soft vs hard delete | appraisal data is not deleted by the API; documents are soft-deleted |
 | Reporting | the normalised model supports queries such as "all journal papers per indexing per department" directly |
+
+## 10. Scoring Annexure: B1 to B5
+
+Sources: the original PDF's **Annexure A** (criterion maximum marks per cadre) and the **scoring annexure for B1 to B5** (component maximum marks per cadre). B1 to B5 correspond to the first five score-sheet criteria: Teaching & Learning, Student Mentoring, FDPs / Certifications, Administrative, Research & Publications.
+
+### CONFIRMED FROM THE SCORING ANNEXURE
+
+| Fact | In the model |
+|---|---|
+| For each cadre, criteria B1 to B5 are split into components, each with a maximum mark | `scoring_components` (102 rows across the five cadres) |
+| Components of a criterion add up to that criterion's maximum for that cadre (verified for all 25 cadre/criterion pairs) | trigger `trg_components_sum` + migration test 2 |
+| Component wording and number differ between cadres (Lecturer B5 has 3 components, Assistant Professor B5 has 5; Professor B2 has 3, the others 4) | components keyed by `(template, cadre, criterion, component_no)`; labels verbatim; **no cross-cadre identity is assumed** |
+| Criterion maxima per cadre and the total of 100 | `scoring_criterion_marks` + migration test 1 |
+
+Component rows are **only B1 to B5**, so for any cadre they add up to less than 100 (for example 82 for an Assistant Professor, the 100 minus B6 to B9's 18). Never compare a component total with the appraisal total.
+
+### REQUIRES COLLEGE CONFIRMATION (nothing in the source documents defines it, so nothing is modelled or calculated)
+
+| Open point | Consequence for the model |
+|---|---|
+| How evidence becomes a component score (pass %, feedback, publication counts, FDP counts, thresholds, weights) | no formula, rule, threshold or weight tables exist. `self_score` is just a value supplied by the backend |
+| Who supplies a component self-score (faculty, panel or the system) and when | the column is nullable; the supplier is not recorded or assumed |
+| Whether a criterion's self-score is the sum of its components | **not enforced.** `appraisal_scores.self_score` and `appraisal_component_scores.self_score` are independent columns |
+| Score granularity (whole marks, halves …) | `numeric(5,2)` |
+| Components for **B6 Funded Projects / Consultancy, B7 Patents, Books & IPR, B8 Outreach, B9 Professional Memberships, Awards & Recognitions** | none defined. Their criterion maximum stays as in Annexure A; **no component rows exist**, and their detailed scoring methodology REQUIRES COLLEGE CONFIRMATION |
+| Which academic years use this rule set | `academic_years.scoring_template_id` is a placeholder assignment |
+| Whether the annexure's "Annexure A & B" labelling means the first part repeats the original Annexure A | the original Annexure A is treated as the criterion-maximum source; the component tables as the B1 to B5 source |
+
+### Versioning: rules that can change by academic year
+
+```
+ScoringTemplate (code, version, status)            <- one per rule set; ACTIVE/RETIRED are immutable
+  └─ ScoringCriterionMarks (cadre, criterion)      <- maximum marks of the criterion for a cadre
+       └─ ScoringComponent (component_no, label)   <- maximum marks of a component (B1 to B5 only)
+
+AcademicYear ──► ScoringTemplate                   <- the rule set in force for the year
+Appraisal    ──► ScoringTemplate                   <- copied at creation: the rules it is scored against, forever
+Appraisal ─► AppraisalScore (criterion)            <- max_marks copied, self_score from the backend
+          └► AppraisalComponentScore (component)   <- max_marks copied, self_score from the backend
+```
+
+- A rule change is a **new template version** (for example `SVEC-SCORING` v2) assigned to later academic years. Appraisals already created keep pointing at v1, and their score rows hold copied maxima, so history never changes.
+- Scoring configuration and scoring state both belong to the **Appraisal Service**. There is no scoring service.
+- Because the annexure does not say how scores arise, a future formula would be **additional** data (for example a rules table keyed by component) and would not change the shape above.

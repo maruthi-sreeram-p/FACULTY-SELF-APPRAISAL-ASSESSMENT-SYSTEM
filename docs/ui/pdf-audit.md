@@ -59,7 +59,7 @@ Each of these is labelled in the UI.
 | 2 | **"Nothing to report here" switch** | Added by the UI so a blank section is a deliberate answer; not in the PDF |
 | 3 | **Totals and counts** (teaching totals, journal counts, project summary, patents summary, books counts) | PDF shows blanks. Entered by hand; not derived from table rows. Needs a decision: typed or computed |
 | 4 | **"Average Feedback % (Ph-1 & Ph-2)"** | One field. Unclear whether Ph-1 and Ph-2 averages are entered separately |
-| 5 | **Self-Score column** | Displayed from the backend (total and optional per criterion). No formula exists in the PDF, so none is implemented. Who enters or computes per-criterion self-scores is undefined |
+| 5 | **Self-Score column** | Displayed from the backend at criterion level and, for B1 to B5, component level (`ScoreSheetDto`). The documents give maximum marks (criterion and component) but no formula, so none is implemented. Who enters or computes any self-score, and whether a criterion score is the sum of its components, is undefined; the frontend never sums them |
 | 6 | **Faculty signature** | PDF is a handwritten signature. UI uses a typed name as a digital stand-in |
 | 7 | **HoD / Principal sections** | Read-only for faculty, values from the backend. How they complete these (signature, seal, timing, return / reject) is undefined; no approval workflow was invented |
 | 8 | **Review & Submit step** and the submission gate | Added by the UI. The PDF defines no submission process |
@@ -76,7 +76,7 @@ Each of these is labelled in the UI.
 ## 5. Questions for the college
 
 1. Are the totals / counts typed by the faculty or computed from the tables?
-2. Who fills the **Self-Score** column, and is there a scoring rubric? (The PDF gives maximum marks only.)
+2. Who fills the **Self-Score** column (criterion and component level), and is there a scoring rubric? (The documents give maximum marks, now also per component for B1 to B5, but no way to turn evidence into a score.)
 3. Which sections or fields are mandatory?
 4. How are faculty signature, HoD recommendation and Principal remarks captured digitally, and in what order? Can an appraisal be returned?
 5. Can a faculty member belong to more than one Department / Branch (the PDF uses check-boxes)?
@@ -106,3 +106,37 @@ The frontend/backend boundary was reviewed against the PDF structure and frozen 
 11. Is the list of academic years fixed by the college, and is there an open/close window for submission?
 12. Should Part A values (name, department, cadre, qualification, experience) stay editable by faculty after being prefilled from the institutional record?
 13. Which file types and sizes are acceptable for supporting documents, and must they be uploaded or only ticked?
+
+## 7. Scoring Annexure: B1 to B5
+
+A second source was added: **"Scoring criteria B1 to B5 (Annexure A & B)"**, a 5-page document giving the component breakdown of criteria B1 to B5 for each cadre.
+
+**What changed in our understanding.** Earlier we treated the PDFs as giving only criterion maximum marks. We now know the structure is *Criterion → Maximum marks → Scoring components (B1 to B5) → Component maximum marks*. We still know nothing about how marks are *earned*.
+
+**About the source.** The document itself could not be opened from this machine, so the figures were taken from the transcription supplied with the request. They were checked for internal consistency: for every one of the 25 cadre/criterion pairs the components add up exactly to the criterion maximum already confirmed from the original PDF's Annexure A, and the stored data matches the supplied text for all 102 components (label and number). Please compare the tables in [api-contract.md §3.2](../backend/api-contract.md#3-scoring-reference) with the physical document once.
+
+### CONFIRMED FROM THE SCORING ANNEXURE
+
+| Item | Status |
+|---|---|
+| B1 to B5 are split into components with maximum marks, for each of the five cadres (102 components in total: Lecturer 19, Assistant Professor 21, Senior Assistant Professor 21, Associate Professor 21, Professor 20) | confirmed |
+| Components of a criterion add up to its Annexure A maximum, for every cadre | confirmed (verified) |
+| Components differ in number and wording between cadres (for example Lecturer B5: 3, Assistant Professor B5: 5; Professor B2: 3, others 4) | confirmed. Components are identified by position within a cadre's list and are not matched across cadres |
+| Criterion maxima and the 100 total per cadre (Annexure A) | confirmed (unchanged) |
+| There are exactly 9 scoring criteria; "Any Other Contributions" has none | confirmed (unchanged) |
+
+### REQUIRES COLLEGE CONFIRMATION
+
+| # | Question |
+|---|---|
+| 14 | **How is a component score produced?** The annexure gives maximum marks only. No percentage rule, publication or FDP count rule, threshold table, weighting or automatic scoring is given, so none is implemented |
+| 15 | Who supplies component and criterion self-scores (faculty, appraisal panel or the system), and at what point in the process? |
+| 16 | Is a criterion's self-score the **sum** of its component scores? (The app stores both and never sums them.) |
+| 17 | **B6 to B9** (Funded Projects / Consultancy, Patents, Books & IPR, Outreach, Professional Memberships, Awards & Recognitions): only criterion maxima exist. Will component breakdowns be provided? Until then, their detailed scoring methodology is undefined |
+| 18 | Which academic years does this scoring template apply to, and how are future changes versioned? (The model supports a new template version per year.) |
+| 19 | Score granularity: whole marks, halves or decimals? |
+| 20 | The annexure is labelled "Annexure A & B". Does its Annexure A repeat the original PDF's Annexure A (criterion maxima), and what is Annexure B? |
+
+### What the application does and does not do
+- **Does:** store and show the maximum marks of each criterion and, for B1 to B5, of each component for the faculty member's cadre; provide a reference viewer for every cadre; accept component and criterion self-scores *from the backend* and display them; keep scoring rules versioned by academic year in the proposed data model.
+- **Does not:** calculate, estimate or suggest any score; derive a criterion score from components; infer B6 to B9 components; assume that components of different cadres correspond; add any rule not present in the documents.

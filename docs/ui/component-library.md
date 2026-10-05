@@ -59,7 +59,7 @@ flowchart TD
 | `StepContent` | `appraisal/` | `step`, `ctx` | Renders a step by kind (sections / scores / official / review) |
 | `BlockView` | `appraisal/` | `block`, `data`, `onBlock` | Fields / table / matrix + "nothing to report" |
 | `MatrixBlock` | `appraisal/` | `block`, `values`, `onChange` | Research profile metrics |
-| `ScoreSheet` | `appraisal/` | `scores`, `cadre`, `year` | **Display only**; maximum marks from `scoring.ts`, self-scores from API; Annexure A |
+| `ScoreSheet` | `appraisal/` | `scoreSheet`, `cadre`, `year` | **Display only**. Criterion rows with expandable B1 to B5 components; maxima from the API (or the printed `scoring.ts` copy), self-scores from the API; scoring-annexure and Annexure A reference viewers. No score is calculated |
 | `ScoreCard` | `appraisal/` | `scores \| null` | Total self-score card for the dashboard |
 | `SupportingDocuments` | `appraisal/` | `year`, `docs`, `enclosed`, `onEnclosed` | PDF checklist with per-item attach |
 | `OfficialReview` | `appraisal/` | `kind`, `review` | Read-only HoD / Principal |

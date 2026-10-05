@@ -52,7 +52,8 @@ Teaching, research, projects and the rest are rows of **one aggregate** that is 
 Scoring stays in the Appraisal Service because:
 - a score is a function of **one appraisal's data plus its cadre**: there is nothing to share across services;
 - score rows must stay **consistent with the appraisal in one transaction** (cadre snapshot, maximum marks copied at scoring time, lock on submit);
-- the PDF defines **no scoring formula**, only maximum marks, so there is no rule engine to isolate yet.
+- the documents define **no scoring formula**: only maximum marks, at criterion level and, for B1 to B5, at component level. There is no rule engine to isolate yet.
+- scoring **configuration** is versioned data (a scoring template assigned per academic year, with cadre maxima and components), so rule changes are new data rows in the Appraisal Service, not a new service.
 
 Revisit only if a strong reason appears: scoring needs a different language/runtime, a different scaling profile, ownership by a different team, or the college introduces a rules engine shared with the "Faculty Performance Evaluation Form" appraisal panel that the PDF mentions.
 

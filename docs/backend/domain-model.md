@@ -9,9 +9,10 @@ Related: [api-contract.md](api-contract.md) · [database-design.md](database-des
 1. **One aggregate: `Appraisal`.** Everything the faculty fills in (Part A, Part B 1–10, the supporting-documents ticks, the declaration) and everything done to it afterwards (score sheet, HoD and Principal reviews) belongs to one appraisal, which belongs to **one faculty and one academic year**.
 2. **Repeating PDF tables are child entities.** Each repeating table in the PDF is its own list of rows under the appraisal.
 3. **Part A is a snapshot.** It is prefilled from the Faculty profile when the appraisal is created and then owned by the appraisal, so history does not change when a profile does.
-4. **Scores are backend facts.** The PDF defines the nine criteria and the cadre-wise maximum marks, but no formula. The backend owns `maxScore` / `selfScore`; no formula is modelled here.
-5. **UI steps are not entities.** HoD / Principal "steps", "Review & Submit" and the stepper have no tables of their own.
-6. **Provisional things are flagged, not invented.** Review workflow, submission rules and statuses beyond `DRAFT` / `SUBMITTED` are placeholders until the college confirms them.
+4. **Scores are backend facts, structured as criterion → component.** The PDFs define the nine criteria, the cadre-wise maximum marks and, for B1 to B5, the maximum marks of each scoring **component**, but **no formula** for turning evidence into a score. The backend owns `maxScore`, `selfScore` and component self-scores; no formula is modelled here.
+5. **Scoring rules are versioned.** Criteria, cadre maxima and components belong to a `ScoringTemplate` (a version), assigned per academic year, so the rules can change without touching past appraisals.
+6. **UI steps are not entities.** HoD / Principal "steps", "Review & Submit" and the stepper have no tables of their own.
+7. **Provisional things are flagged, not invented.** Review workflow, submission rules and statuses beyond `DRAFT` / `SUBMITTED` are placeholders until the college confirms them.
 
 ## 2. Context map
 
@@ -27,7 +28,7 @@ flowchart LR
   subgraph AppraisalCtx[Appraisal context]
     AY[AcademicYear]
     A[(Appraisal aggregate)]
-    SC[Score reference: Criteria + Cadre max marks]
+    SC[ScoringTemplate: criteria, cadre maxima, B1-B5 components]
   end
   subgraph DocCtx[Document context]
     SD[Supporting Document files]
@@ -36,6 +37,7 @@ flowchart LR
   F --> D
   F -. "faculty_id (by value)" .-> A
   AY --> A
+  AY -- "uses template" --> SC
   SC -. "maxima copied when scored" .-> A
   A -. "appraisal_id (by value)" .-> SD
 ```
@@ -51,7 +53,10 @@ erDiagram
   APPRAISAL ||--|| GENERAL_INFO : "Part A snapshot"
   APPRAISAL ||--|| SUMMARY_COUNTS : "typed totals"
   APPRAISAL ||--o{ SECTION_FLAG : "nothing to report (provisional)"
-  APPRAISAL ||--o{ SCORE : "9 rows"
+  APPRAISAL ||--o{ SCORE : "9 criterion rows"
+  APPRAISAL ||--o{ COMPONENT_SCORE : "B1-B5 component rows"
+  SCORING_TEMPLATE ||--o{ ACADEMIC_YEAR : "in force for"
+  SCORING_TEMPLATE ||--o{ APPRAISAL : "scored against"
   APPRAISAL ||--o| DECLARATION : "signed once"
   APPRAISAL ||--o{ REVIEW : "HOD and PRINCIPAL"
   APPRAISAL ||--o{ DOCUMENT_CHECKLIST_TICK : "enclosed items"
@@ -159,14 +164,18 @@ erDiagram
 | **Outreach Activity** | child list | B8 | 0..n | [A] |
 | **Membership / Award** | child list | B9 | 0..n | [A] |
 | **Other Contribution** | child, 1:1 | B10 two free-text areas (Department / Institute level). **Not scored** | 0..1 | [A] |
-| **Score** | child, exactly 9 once scored | B11 score sheet. Criteria and cadre maxima from Annexure A | 0 or 9 | [S] backend |
+| **Score** | child, exactly 9 once scored | B11 score sheet. Criterion rows with maximum marks from Annexure A | 0 or 9 | [S] backend |
+| **ComponentScore** | child, only for B1 to B5 | scoring annexure: component rows under criteria B1 to B5, each with a copied maximum and a backend-supplied self-score. **No breakdown exists for B6 to B9** | 0 or 21 (Asst. Prof.; 19 to 21 by cadre) | [S] backend |
 | **Supporting Document** | separate context | B11 "Supporting documents enclosed" (11 types). Files | 0..n | Document Service |
 | DocumentChecklistTick | child | the ticks of the same checklist, plus "Others: ____" text | 0..11 | [A] |
 | **Declaration** | child, 0..1 | Declaration: Date, Place, Signature of Faculty. **Mechanism PROVISIONAL** | 0..1 | [A] |
 | **HOD Review** | child (`Review`, role `HOD`) | "Recommendations of HoD" + "Head of the Department (Signature with Seal & Date)". **PROVISIONAL workflow** | 0..1 | [R] |
 | **Principal Review** | child (`Review`, role `PRINCIPAL`) | "Remarks of the Principal" + "Principal (Signature with Seal & Date)". **PROVISIONAL workflow** | 0..1 | [R] |
 | SectionFlag | child (**PROVISIONAL UI feature**) | not in the PDF: "nothing to report" per section | 0..n | [A] |
-| ScoreCriterion, CadreMaxMarks | reference | Annexure A | 9 criteria × 5 cadres | Appraisal Service (seeded) |
+| **ScoringTemplate** | reference, versioned | the rule set: Annexure A + scoring annexure B1 to B5. Assigned per academic year; an appraisal remembers the one it was created under | n/a | Appraisal Service (seeded) |
+| ScoreCriterion | reference | the nine criteria (no tenth) | 9 | Appraisal Service (seeded) |
+| CriterionMarks | reference (per template) | Annexure A: maximum marks per cadre and criterion | 5 cadres × 9 criteria | Appraisal Service (seeded) |
+| **ScoringComponent** | reference (per template) | scoring annexure: component label and maximum marks per cadre, B1 to B5 only | 102 across 5 cadres; 0 for B6 to B9 | Appraisal Service (seeded) |
 | User, Role | identity | not in the PDF | | Auth Service |
 
 Two modelling choices worth stating:
@@ -179,9 +188,13 @@ Two modelling choices worth stating:
 |---|---|---|
 | 1 | At most one appraisal per (faculty, academic year) | firm (stated by the requirement) |
 | 2 | An appraisal's `cadre` is a snapshot and is one of the 5 PDF cadres | firm |
-| 3 | A scored appraisal has exactly 9 `Score` rows, one per criterion; `max_marks` come from Annexure A for the snapshot cadre; each cadre's maxima sum to 100 | firm (Annexure A) |
+| 3 | A scored appraisal has exactly 9 `Score` rows, one per criterion; `max_marks` come from the appraisal's template for the snapshot cadre; each cadre's maxima sum to 100 | firm (Annexure A) |
 | 4 | There is no 10th criterion; "Any Other Contributions" never has a score row | firm (PDF) |
-| 5 | `self_score` is never calculated by the frontend. The backend supplies it by a mechanism the PDF does not define | **PROVISIONAL** |
+| 5 | `self_score` (criterion and component) is never calculated by the frontend. The backend supplies it by a mechanism the documents do not define | **PROVISIONAL** |
+| 5a | Within a template, a cadre's components for a criterion add up to that criterion's maximum, wherever components exist (B1 to B5) | firm (scoring annexure, checked for all 25 pairs) |
+| 5b | Components exist only for B1 to B5. B6 to B9 have none; a component total is therefore **not** comparable with the 100 total | firm for the current annexure |
+| 5c | A criterion's self-score is **not** assumed to equal the sum of its components | **REQUIRES COLLEGE CONFIRMATION** |
+| 5d | An appraisal keeps the scoring template it was created under; a rule change is a new template version, never an edit of an ACTIVE one | proposed policy |
 | 6 | `Research Metric` has at most one row per platform (3) | firm (PDF grid) |
 | 7 | A `Review` exists at most once per role per appraisal | firm |
 | 8 | A submitted appraisal is read-only for the faculty | `SUBMITTED` lock is firm for the UI; statuses beyond it are **PROVISIONAL** |
@@ -211,7 +224,64 @@ Two modelling choices worth stating:
 
 ## 7. What is deliberately not modelled
 
-- A scoring formula or rule engine (the PDF has none).
+- A scoring formula or rule engine. The documents give maximum marks (criterion and component) but no way to turn evidence into a score; this is REQUIRES COLLEGE CONFIRMATION.
 - An approval / review workflow engine, queues, delegation, return reasons (undefined by the PDF).
 - Per-row evidence attachments (the first build had them; the PDF does not).
 - Full department names, academic-year start/end dates, appraisal windows (not in the PDF).
+
+## 8. Scoring Annexure: B1 to B5
+
+The score sheet used to be modelled as `Criterion → Maximum → Self-score`. The scoring annexure adds a level:
+
+```mermaid
+erDiagram
+  SCORING_TEMPLATE ||--o{ CRITERION_MARKS : "per cadre and criterion"
+  CRITERION_MARKS ||--o{ SCORING_COMPONENT : "B1-B5 only"
+  SCORING_TEMPLATE ||--o{ ACADEMIC_YEAR : "in force for"
+  SCORING_TEMPLATE ||--o{ APPRAISAL : "scored against"
+  APPRAISAL ||--o{ SCORE : "criterion level"
+  APPRAISAL ||--o{ COMPONENT_SCORE : "component level"
+  SCORING_COMPONENT ||--o{ COMPONENT_SCORE : "copied max, self score"
+  SCORING_TEMPLATE {
+    string code
+    int version
+    string status "DRAFT, ACTIVE, RETIRED"
+  }
+  CRITERION_MARKS {
+    string cadre
+    string criterion "one of 9"
+    int max_marks
+  }
+  SCORING_COMPONENT {
+    int component_no "position in the annexure"
+    string label "verbatim"
+    int max_marks
+  }
+  SCORE {
+    string criterion
+    int max_marks "copied"
+    numeric self_score "backend"
+  }
+  COMPONENT_SCORE {
+    int max_marks "copied"
+    numeric self_score "backend"
+  }
+```
+
+Conceptual chain, as requested: `ScoringTemplate → Cadre → Criterion → ScoringComponent → MaximumMarks`, and on the appraisal side `Appraisal → SelfScore / ComponentSelfScore`.
+
+### CONFIRMED FROM THE SCORING ANNEXURE
+- B1 Teaching & Learning, B2 Student Mentoring, Guidance & Achievements, B3 FDPs / Certifications, B4 Administrative, Curriculum & Quality Contributions and B5 Research & Publications are each divided into components with a maximum mark, **separately for each of the five cadres**.
+- For every cadre and criterion the components add up to the criterion maximum from Annexure A (all 25 pairs checked; 102 components in total).
+- The set, number and wording of components differ by cadre (for example Lecturer B5 has 3 components, Assistant Professor B5 has 5, Professor B2 has 3). A component is identified by its position within the cadre's list, and **similarly named components of different cadres are not assumed to be the same thing**.
+- Complete tables: [api-contract.md §3](api-contract.md#3-scoring-reference).
+
+### REQUIRES COLLEGE CONFIRMATION
+- **The scoring rules themselves.** How evidence (pass %, feedback, number of publications, FDP counts …) becomes a component score is not defined. No formula, threshold, weight or automatic rule is modelled.
+- Who supplies component self-scores (faculty, panel or system) and at what point.
+- Whether a criterion self-score equals the sum of its component scores (the model deliberately does not enforce it).
+- **B6 to B9** (Funded Projects / Consultancy, Patents, Books & IPR, Outreach, Professional Memberships, Awards & Recognitions): only the criterion maximum is defined (Annexure A). They have no components, and their detailed scoring methodology is not defined.
+- Which academic years the current template applies to.
+
+### Where it lives
+Scoring configuration (template, criteria, cadre maxima, components) and scoring state (criterion and component scores) belong to the **Appraisal Service**. A separate Scoring Service is not justified: scoring is a function of one appraisal's data plus its cadre, must stay consistent with it, and there is no formula to isolate. See [service-boundaries.md](service-boundaries.md).

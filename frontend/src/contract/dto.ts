@@ -241,19 +241,46 @@ export interface AppraisalContentDto {
 
 export type AppraisalSectionKey = keyof AppraisalContentDto
 
+/**
+ * One scoring component of criteria B1 to B5 (CONFIRMED FROM THE SCORING ANNEXURE: label and maximum).
+ * Identity is `componentNo`, the position in the annexure listing for that cadre and criterion. Wording and
+ * number of components differ by cadre, so never compare components across cadres by number.
+ * `selfScore` is [S]; how it is produced is REQUIRES COLLEGE CONFIRMATION.
+ */
+export interface ComponentScoreDto {
+  componentNo: number
+  label: string
+  maxMarks: number
+  selfScore: number | null
+}
 export interface CriterionScoreDto {
   criterion: CriterionCode
   /** maximum marks for the appraisal's cadre (Annexure A) [S] */
   maxMarks: number
-  /** null until the backend supplies it [S] */
+  /** null until the backend supplies it [S]. Whether it equals the sum of the components is REQUIRES COLLEGE CONFIRMATION */
   selfScore: number | null
+  /** B1 to B5 have components; B6 to B9 have none defined, so `[]` (REQUIRES COLLEGE CONFIRMATION) */
+  components: ComponentScoreDto[]
 }
-/** [S] read-only for the frontend. The PDF defines maximum marks only, not how a self-score is produced. */
+/** The scoring template (rule set + version) an appraisal is scored against. Templates are versioned and assigned per academic year. */
+export interface ScoringTemplateRefDto { code: string; name: string; version: number }
+/** [S] read-only for the frontend. The PDFs define maximum marks (criterion and component), not how a self-score is produced. */
 export interface ScoreSheetDto {
   cadre: CadreCode
+  scoringTemplate: ScoringTemplateRefDto
   maxScore: number
   selfScore: number | null
   criteria: CriterionScoreDto[]
+}
+
+/** GET /reference/scoring?academicYear=: the scoring template in force, as reference data. */
+export interface ScoringReferenceDto {
+  template: ScoringTemplateRefDto
+  criteria: { code: CriterionCode; number: number; title: string }[]
+  cadres: {
+    cadre: CadreCode
+    criteria: { criterion: CriterionCode; maxMarks: number; components: { componentNo: number; label: string; maxMarks: number }[] }[]
+  }[]
 }
 
 /** [R] HoD recommendation / Principal remarks. The workflow is PROVISIONAL. */

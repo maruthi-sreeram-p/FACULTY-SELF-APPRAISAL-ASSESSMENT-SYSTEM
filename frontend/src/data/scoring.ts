@@ -48,3 +48,70 @@ export const cadreLabel = (code?: string | null) => CADRES.find((c) => c.code ==
 
 /** Sum of the configured maximum marks (not a score). */
 export const totalMax = (cadre: CadreCode) => CRITERIA.reduce((sum, c) => sum + MAX_MARKS[cadre][c.code], 0)
+
+/* -------------------------------------------------------------------------------------------------
+ * Scoring components, criteria B1 to B5 (source: "Scoring criteria B1 to B5 (Annexure A & B)").
+ *
+ * CONFIRMED FROM THE SCORING ANNEXURE: for each cadre, B1-B5 are broken into components with a maximum
+ * mark each. Labels are verbatim. Per cadre and criterion the components sum to the criterion maximum above.
+ *
+ * REQUIRES COLLEGE CONFIRMATION (nothing below defines it, so nothing in this app calculates it):
+ *  - how evidence (courses, pass %, feedback, publications, FDPs ...) is turned into a component score;
+ *  - who supplies a component self-score, and whether a criterion self-score is the sum of its components;
+ *  - components for B6-B9 (Funded Projects, Patents/Books/IPR, Outreach, Memberships/Awards): none are defined,
+ *    only their criterion maximum.
+ *
+ * Components differ in wording and number between cadres, so their identity is the position `no` within a
+ * (cadre, criterion) list. Do not assume that component 3 of one cadre equals component 3 of another.
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface ScoringComponent { no: number; label: string; max: number }
+
+/** B1-B5 map to these criteria; B6-B9 have no component breakdown. */
+export const COMPONENT_CRITERIA: readonly CriterionCode[] = [
+  'TEACHING_LEARNING', 'STUDENT_MENTORING', 'FDP_CERTIFICATIONS', 'ADMINISTRATIVE', 'RESEARCH_PUBLICATIONS',
+]
+
+const list = (...pairs: [string, number][]): readonly ScoringComponent[] => pairs.map(([label, max], i) => ({ no: i + 1, label, max }))
+
+export const COMPONENTS: Record<CadreCode, Partial<Record<CriterionCode, readonly ScoringComponent[]>>> = {
+  LECTURER: {
+    TEACHING_LEARNING: list(['Workload & course delivery', 10], ['Pass/result performance', 10], ['Student feedback', 8], ['Course-file/assessment quality', 6], ['Innovative/remedial/advanced-learning practices', 6]),
+    STUDENT_MENTORING: list(['Mentoring records & attendance/academic follow-up', 5], ['Project/lab guidance', 4], ['Student achievement support', 4], ['Parent/student support evidence', 2]),
+    FDP_CERTIFICATIONS: list(['FDP/workshops/training', 10], ['Relevant certification', 5]),
+    ADMINISTRATIVE: list(['Department responsibilities', 5], ['Institute committees/events', 3], ['Curriculum/BoS/academic support', 3], ['Quality/accreditation contributions', 2], ['Measurable institutional/student-service contribution', 2]),
+    RESEARCH_PUBLICATIONS: list(['Quality publications', 3], ['Citations/research profile', 1], ['Research activity/collaboration', 1]),
+  },
+  ASSISTANT_PROFESSOR: {
+    TEACHING_LEARNING: list(['Workload & course delivery', 8], ['Pass/result performance', 8], ['Feedback', 6], ['Course-file/assessment quality', 4], ['Innovation/remedial/advanced learning', 4]),
+    STUDENT_MENTORING: list(['Mentoring', 4], ['Project guidance', 3], ['Student achievements', 3], ['Academic/placement/competitive-exam support', 2]),
+    FDP_CERTIFICATIONS: list(['FDP/workshops/training', 6], ['Relevant certification', 4]),
+    ADMINISTRATIVE: list(['Department responsibilities', 4], ['Institute roles', 3], ['Curriculum/BoS', 3], ['Quality/accreditation', 3], ['Measurable institutional contribution', 2]),
+    RESEARCH_PUBLICATIONS: list(['SCI/SCIE/quality Scopus publications', 8], ['Other eligible publications', 2], ['Citations/profile', 2], ['Conference/research dissemination', 1], ['Research collaboration/academic output', 2]),
+  },
+  SENIOR_ASSISTANT_PROFESSOR: {
+    TEACHING_LEARNING: list(['Workload & course delivery', 6], ['Result performance', 6], ['Feedback', 5], ['Course/assessment quality', 4], ['Innovation/academic contribution', 4]),
+    STUDENT_MENTORING: list(['Mentoring quality', 3], ['Project guidance', 3], ['Student achievements', 2], ['Academic/placement support', 2]),
+    FDP_CERTIFICATIONS: list(['FDP/workshops/training', 5], ['Certification', 3]),
+    ADMINISTRATIVE: list(['Department/institute responsibility', 4], ['Curriculum/BoS', 3], ['Quality/accreditation', 4], ['Committee/event leadership', 2], ['Institutional improvement', 2]),
+    RESEARCH_PUBLICATIONS: list(['SCI/SCIE/quality Scopus publications', 10], ['Citations/profile', 3], ['Conference/research dissemination', 2], ['Research collaboration', 2], ['Ph.D./PG research guidance', 3]),
+  },
+  ASSOCIATE_PROFESSOR: {
+    TEACHING_LEARNING: list(['Course delivery/workload', 5], ['Result/academic quality', 5], ['Feedback', 4], ['Course/assessment development', 3], ['Innovative teaching/academic leadership', 3]),
+    STUDENT_MENTORING: list(['Mentoring', 2], ['Project/PG guidance', 2], ['Student achievements', 2], ['Advanced learner/placement/research support', 2]),
+    FDP_CERTIFICATIONS: list(['FDP/workshops/training', 3], ['Certification', 2]),
+    ADMINISTRATIVE: list(['Academic/administrative leadership', 4], ['Curriculum/BoS', 3], ['Quality/accreditation', 4], ['Committee/institutional leadership', 2], ['Measurable improvement', 2]),
+    RESEARCH_PUBLICATIONS: list(['Quality journal publications', 12], ['Citations/research impact', 4], ['Research guidance', 4], ['Conference/research dissemination', 2], ['Collaboration/research leadership', 3]),
+  },
+  PROFESSOR: {
+    TEACHING_LEARNING: list(['Teaching quality/workload', 4], ['Result/academic quality', 4], ['Feedback', 3], ['Curriculum/assessment contribution', 2], ['Innovative teaching/academic leadership', 2]),
+    STUDENT_MENTORING: list(['Academic/research mentoring', 2], ['Student/project/PG guidance', 1], ['Significant student achievements', 2]),
+    FDP_CERTIFICATIONS: list(['Relevant advanced FDP/training', 3], ['Certification/academic updating', 2]),
+    ADMINISTRATIVE: list(['Academic/institutional leadership', 5], ['Curriculum/BoS', 4], ['Quality/accreditation', 5], ['Major institutional responsibility', 3], ['Measurable institutional development', 3]),
+    RESEARCH_PUBLICATIONS: list(['Quality journal publications', 10], ['Citations/research impact', 5], ['Ph.D./PG guidance', 5], ['Research leadership/collaboration', 3], ['Conference/editorial/reviewer contributions', 2]),
+  },
+}
+
+/** Printed components for a cadre and criterion; empty for B6-B9 (no breakdown defined). */
+export const componentsFor = (cadre: CadreCode | null | undefined, criterion: CriterionCode): readonly ScoringComponent[] =>
+  (cadre && COMPONENTS[cadre][criterion]) || []

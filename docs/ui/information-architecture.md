@@ -39,7 +39,7 @@ The PDF has Part A, eleven Part B sections, a Declaration and two official boxes
 | 9 | Outreach (`outreach`) | Part B · 8 | Table (Role*, Event / Activity, Name of the Organization / Institution, Venue, Date). The PDF's 11 example roles are suggested values | B8 | `outreach` |
 | 10 | Professional Memberships, Awards & Recognitions (`memberships`) | Part B · 9 | Table (Membership / Award / Recognition, Professional / Awarding Body, Level, Year) | B9 | `membershipsAwards` |
 | 11 | Any Other Contributions (`other`) | Part B · 10 | **Not a table.** Two free-text areas: At Department level, At Institute level | B10 | `otherContributions` |
-| 12 | Self-Appraisal Score Sheet & Supporting Documents (`scores`) | Part B · 11 and Annexure A | **Score sheet** (S. No, Criteria, Max. Marks (my cadre), Self-Score, Total 100: 9 criteria, no 10th) with an **Annexure A** reference table; **Supporting documents enclosed** checklist (11 items, last is "Others: ____") | B11 | `scoreSheet` (read-only), `supportingDocuments`, Documents API |
+| 12 | Self-Appraisal Score Sheet & Supporting Documents (`scores`) | Part B · 11 and Annexure A | **Score sheet** (S. No, Criteria, Max. Marks (my cadre), Self-Score, Total 100: 9 criteria, no 10th) with an expandable **component breakdown for B1 to B5** and **Annexure A** and scoring-annexure reference tables; **Supporting documents enclosed** checklist (11 items, last is "Others: ____") | B11 | `scoreSheet` (read-only), `supportingDocuments`, Documents API |
 | 13 | Declaration (`declaration`) | Declaration | PDF wording verbatim + Date, Place, Signature of Faculty | none | `declaration` |
 | 14 | Recommendations of HoD (`hod`) | Recommendations of HoD | Read-only remarks + "Head of the Department (Signature with Seal & Date)" | none | `reviews.hod` (read-only) |
 | 15 | Remarks of the Principal (`principal`) | Remarks of the Principal | Read-only remarks + "Principal (Signature with Seal & Date)" | none | `reviews.principal` (read-only) |
@@ -53,6 +53,32 @@ Stepper groups: **Part A**, **Part B**, **Declaration & approvals**, **Submissio
 ## Score configuration
 
 `src/data/scoring.ts` holds the 9 criteria and the cadre-wise **maximum** marks printed in Annexure A (verified programmatically against the PDF: 45 values, each cadre totals 100). The PDF gives no formula for converting activity into a self-score, so none exists in the frontend. The backend is the source of truth for `maxScore` / `selfScore` (`ScoreSheetDto`); the frontend only displays them, and uses the printed maxima as reference until a score sheet exists.
+
+## Scoring Annexure: B1 to B5
+
+The score sheet now has two levels: **criterion** (maximum marks, Annexure A) and, for B1 to B5, **scoring components** (maximum marks per component, from the scoring annexure "Scoring criteria B1 to B5 (Annexure A & B)").
+
+### CONFIRMED FROM THE SCORING ANNEXURE
+- B1 Teaching & Learning, B2 Student Mentoring, B3 FDPs / Certifications, B4 Administrative and B5 Research & Publications are divided into components with a maximum mark, **separately for each cadre**. Labels are verbatim; per cadre and criterion the components add up to the criterion maximum (25 pairs, 102 components; tables in [api-contract.md §3](../backend/api-contract.md#3-scoring-reference)).
+- Components differ in number and wording by cadre, so they are shown only for the faculty member's own cadre (or the cadre chosen in the reference viewer) and never matched across cadres.
+- B1 to B5 are the criteria whose Part B sections are steps B1 to B5 in the stepper (Teaching, Mentoring, FDPs, Administrative, Research).
+
+### How the UI shows it (step B11, no redesign)
+| Element | Behaviour |
+|---|---|
+| Criterion row | Unchanged columns: Criteria, Max. Marks (my cadre), Self-Score. Rows B1 to B5 gain a chevron |
+| "Show component breakdown" | Expands every B1 to B5 row to list its components with `Max` and `Self-Score` (shown as "—" until the system supplies one). Each row can also be toggled alone (`aria-expanded`) |
+| B6 to B9 rows | No chevron; a note says no component breakdown is defined (requires college confirmation) |
+| Self-scores | Displayed only when the backend returns them. **No component score and no criterion total is calculated or summed by the frontend** |
+| "Scoring annexure: components of B1 to B5" | Reference viewer with a cadre selector (defaults to the faculty member's cadre) listing every criterion with its components and maxima |
+| Before a score sheet exists | The printed criterion and component maxima for the chosen cadre are shown, with "—" for self-scores |
+| Notice | An amber Provisional tag states what is not defined |
+
+### REQUIRES COLLEGE CONFIRMATION
+- **The scoring rules**: how evidence (pass %, feedback, publication counts, FDP counts, and so on) becomes a component score. Not defined, so no formula, threshold, weight or automatic scoring exists anywhere in the app.
+- Who supplies component and criterion self-scores, and when.
+- Whether a criterion self-score is the sum of its components.
+- **B6 Funded Projects / Consultancy, B7 Patents, Books & IPR, B8 Outreach, B9 Professional Memberships, Awards & Recognitions**: only the criterion maximum from Annexure A is defined; their detailed scoring methodology is undefined.
 
 ## Data flow (frozen contract)
 

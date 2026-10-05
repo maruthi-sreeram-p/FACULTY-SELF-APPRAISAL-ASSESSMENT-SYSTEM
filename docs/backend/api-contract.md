@@ -87,9 +87,15 @@ Free text with *suggested* values (not enums): student-achievement `achievement`
 
 ---
 
-## 3. Scoring reference (Annexure A)
+## 3. Scoring reference
 
-**Maximum marks only. The PDF defines no formula for converting activity into a self-score, so none is specified or implemented.** The backend is the source of truth for `maxScore` and `selfScore`; the frontend only displays them. The frontend also keeps this table as printed reference (Annexure A screen, and the maximum marks shown before a score sheet exists). Verified against the rendered PDF page: 45 values, 0 mismatches.
+Two documents define the scoring structure. Both are **reference data**; the backend is the source of truth for `maxScore`, `selfScore` and every component score, and the frontend only displays them. The frontend keeps a printed copy (`frontend/src/data/scoring.ts`) for the Annexure A table and for the maximum marks it shows before a score sheet exists.
+
+Model: **Criterion → Maximum marks → Scoring components (B1 to B5 only) → Component maximum marks**, and on the appraisal **criterion self-score and component self-scores**. Rules are versioned by a *scoring template* assigned per academic year (see [database-design.md §10](database-design.md#10-scoring-annexure-b1-to-b5)).
+
+### 3.1 CONFIRMED: criterion maximum marks (original PDF, Annexure A)
+
+Verified against the rendered PDF page: 45 values, 0 mismatches.
 
 | # | Criterion (`CriterionCode`) | Lecturer | Asst. Prof. | Sr. Asst. Prof. | Assoc. Prof. | Professor |
 |---|---|---:|---:|---:|---:|---:|
@@ -104,7 +110,153 @@ Free text with *suggested* values (not enums): student-achievement `achievement`
 | 9 | Professional Memberships, Awards & Recognitions (`MEMBERSHIPS_AWARDS`) | 5 | 5 | 5 | 5 | 5 |
 | | **Total** | **100** | **100** | **100** | **100** | **100** |
 
-Backend responsibility: store this as reference data (see database-design.md), copy the cadre's maxima onto the appraisal's score rows when a score sheet is produced (so later changes to the annexure do not rewrite history), and keep each cadre summing to 100.
+### 3.2 CONFIRMED FROM THE SCORING ANNEXURE: component maximum marks, B1 to B5
+
+Source: "Scoring criteria B1 to B5 (Annexure A & B)". For **each cadre**, criteria B1 to B5 are divided into components, each with a maximum mark. Labels are verbatim. For all 25 cadre/criterion pairs the components add up to the criterion maximum in 3.1 (102 components in total).
+
+- A component is identified by `componentNo`, its position in the annexure listing **for that cadre and criterion**.
+- **The set, number and wording of components differ by cadre** (for example Lecturer B5 has 3 components, Assistant Professor B5 has 5; Professor B2 has 3, the other cadres 4). Do **not** assume that a component of one cadre is "the same" as a similarly named one of another cadre.
+- Component totals cover **B1 to B5 only**, so they are less than 100 (for example 82 for an Assistant Professor, because B6 to B9 contribute the other 18). Never compare a component total with the appraisal total.
+
+#### Lecturer (`LECTURER`)
+
+| Criterion | Max | # | Component | Max |
+|---|---:|---:|---|---:|
+| **B1** Teaching & Learning | **40** | 1 | Workload & course delivery | 10 |
+|  |  | 2 | Pass/result performance | 10 |
+|  |  | 3 | Student feedback | 8 |
+|  |  | 4 | Course-file/assessment quality | 6 |
+|  |  | 5 | Innovative/remedial/advanced-learning practices | 6 |
+| **B2** Student Mentoring, Guidance & Achievements | **15** | 1 | Mentoring records & attendance/academic follow-up | 5 |
+|  |  | 2 | Project/lab guidance | 4 |
+|  |  | 3 | Student achievement support | 4 |
+|  |  | 4 | Parent/student support evidence | 2 |
+| **B3** FDPs / Certifications | **15** | 1 | FDP/workshops/training | 10 |
+|  |  | 2 | Relevant certification | 5 |
+| **B4** Administrative, Curriculum & Quality Contributions | **15** | 1 | Department responsibilities | 5 |
+|  |  | 2 | Institute committees/events | 3 |
+|  |  | 3 | Curriculum/BoS/academic support | 3 |
+|  |  | 4 | Quality/accreditation contributions | 2 |
+|  |  | 5 | Measurable institutional/student-service contribution | 2 |
+| **B5** Research & Publications | **5** | 1 | Quality publications | 3 |
+|  |  | 2 | Citations/research profile | 1 |
+|  |  | 3 | Research activity/collaboration | 1 |
+
+#### Assistant Professor (`ASSISTANT_PROFESSOR`)
+
+| Criterion | Max | # | Component | Max |
+|---|---:|---:|---|---:|
+| **B1** Teaching & Learning | **30** | 1 | Workload & course delivery | 8 |
+|  |  | 2 | Pass/result performance | 8 |
+|  |  | 3 | Feedback | 6 |
+|  |  | 4 | Course-file/assessment quality | 4 |
+|  |  | 5 | Innovation/remedial/advanced learning | 4 |
+| **B2** Student Mentoring, Guidance & Achievements | **12** | 1 | Mentoring | 4 |
+|  |  | 2 | Project guidance | 3 |
+|  |  | 3 | Student achievements | 3 |
+|  |  | 4 | Academic/placement/competitive-exam support | 2 |
+| **B3** FDPs / Certifications | **10** | 1 | FDP/workshops/training | 6 |
+|  |  | 2 | Relevant certification | 4 |
+| **B4** Administrative, Curriculum & Quality Contributions | **15** | 1 | Department responsibilities | 4 |
+|  |  | 2 | Institute roles | 3 |
+|  |  | 3 | Curriculum/BoS | 3 |
+|  |  | 4 | Quality/accreditation | 3 |
+|  |  | 5 | Measurable institutional contribution | 2 |
+| **B5** Research & Publications | **15** | 1 | SCI/SCIE/quality Scopus publications | 8 |
+|  |  | 2 | Other eligible publications | 2 |
+|  |  | 3 | Citations/profile | 2 |
+|  |  | 4 | Conference/research dissemination | 1 |
+|  |  | 5 | Research collaboration/academic output | 2 |
+
+#### Senior Assistant Professor (`SENIOR_ASSISTANT_PROFESSOR`)
+
+| Criterion | Max | # | Component | Max |
+|---|---:|---:|---|---:|
+| **B1** Teaching & Learning | **25** | 1 | Workload & course delivery | 6 |
+|  |  | 2 | Result performance | 6 |
+|  |  | 3 | Feedback | 5 |
+|  |  | 4 | Course/assessment quality | 4 |
+|  |  | 5 | Innovation/academic contribution | 4 |
+| **B2** Student Mentoring, Guidance & Achievements | **10** | 1 | Mentoring quality | 3 |
+|  |  | 2 | Project guidance | 3 |
+|  |  | 3 | Student achievements | 2 |
+|  |  | 4 | Academic/placement support | 2 |
+| **B3** FDPs / Certifications | **8** | 1 | FDP/workshops/training | 5 |
+|  |  | 2 | Certification | 3 |
+| **B4** Administrative, Curriculum & Quality Contributions | **15** | 1 | Department/institute responsibility | 4 |
+|  |  | 2 | Curriculum/BoS | 3 |
+|  |  | 3 | Quality/accreditation | 4 |
+|  |  | 4 | Committee/event leadership | 2 |
+|  |  | 5 | Institutional improvement | 2 |
+| **B5** Research & Publications | **20** | 1 | SCI/SCIE/quality Scopus publications | 10 |
+|  |  | 2 | Citations/profile | 3 |
+|  |  | 3 | Conference/research dissemination | 2 |
+|  |  | 4 | Research collaboration | 2 |
+|  |  | 5 | Ph.D./PG research guidance | 3 |
+
+#### Associate Professor (`ASSOCIATE_PROFESSOR`)
+
+| Criterion | Max | # | Component | Max |
+|---|---:|---:|---|---:|
+| **B1** Teaching & Learning | **20** | 1 | Course delivery/workload | 5 |
+|  |  | 2 | Result/academic quality | 5 |
+|  |  | 3 | Feedback | 4 |
+|  |  | 4 | Course/assessment development | 3 |
+|  |  | 5 | Innovative teaching/academic leadership | 3 |
+| **B2** Student Mentoring, Guidance & Achievements | **8** | 1 | Mentoring | 2 |
+|  |  | 2 | Project/PG guidance | 2 |
+|  |  | 3 | Student achievements | 2 |
+|  |  | 4 | Advanced learner/placement/research support | 2 |
+| **B3** FDPs / Certifications | **5** | 1 | FDP/workshops/training | 3 |
+|  |  | 2 | Certification | 2 |
+| **B4** Administrative, Curriculum & Quality Contributions | **15** | 1 | Academic/administrative leadership | 4 |
+|  |  | 2 | Curriculum/BoS | 3 |
+|  |  | 3 | Quality/accreditation | 4 |
+|  |  | 4 | Committee/institutional leadership | 2 |
+|  |  | 5 | Measurable improvement | 2 |
+| **B5** Research & Publications | **25** | 1 | Quality journal publications | 12 |
+|  |  | 2 | Citations/research impact | 4 |
+|  |  | 3 | Research guidance | 4 |
+|  |  | 4 | Conference/research dissemination | 2 |
+|  |  | 5 | Collaboration/research leadership | 3 |
+
+#### Professor (`PROFESSOR`)
+
+| Criterion | Max | # | Component | Max |
+|---|---:|---:|---|---:|
+| **B1** Teaching & Learning | **15** | 1 | Teaching quality/workload | 4 |
+|  |  | 2 | Result/academic quality | 4 |
+|  |  | 3 | Feedback | 3 |
+|  |  | 4 | Curriculum/assessment contribution | 2 |
+|  |  | 5 | Innovative teaching/academic leadership | 2 |
+| **B2** Student Mentoring, Guidance & Achievements | **5** | 1 | Academic/research mentoring | 2 |
+|  |  | 2 | Student/project/PG guidance | 1 |
+|  |  | 3 | Significant student achievements | 2 |
+| **B3** FDPs / Certifications | **5** | 1 | Relevant advanced FDP/training | 3 |
+|  |  | 2 | Certification/academic updating | 2 |
+| **B4** Administrative, Curriculum & Quality Contributions | **20** | 1 | Academic/institutional leadership | 5 |
+|  |  | 2 | Curriculum/BoS | 4 |
+|  |  | 3 | Quality/accreditation | 5 |
+|  |  | 4 | Major institutional responsibility | 3 |
+|  |  | 5 | Measurable institutional development | 3 |
+| **B5** Research & Publications | **25** | 1 | Quality journal publications | 10 |
+|  |  | 2 | Citations/research impact | 5 |
+|  |  | 3 | Ph.D./PG guidance | 5 |
+|  |  | 4 | Research leadership/collaboration | 3 |
+|  |  | 5 | Conference/editorial/reviewer contributions | 2 |
+
+### 3.3 REQUIRES COLLEGE CONFIRMATION (not defined by either document, so nothing is specified or calculated)
+
+| Open point | What this contract does |
+|---|---|
+| **How evidence becomes a score**: any rule that turns pass %, feedback, publication counts, FDP counts, thresholds or weights into a component or criterion score | No formula, percentage rule, count rule, threshold table, weighting or automatic scoring exists in the API or the frontend |
+| **Who supplies component and criterion self-scores** (faculty, panel or system) and when | `selfScore` is `null` until the backend supplies it. There is no client write endpoint |
+| **Whether a criterion self-score equals the sum of its components** | Not assumed. The API returns both; the frontend never sums components |
+| **B6 Funded Projects / Consultancy, B7 Patents, Books & IPR, B8 Outreach, B9 Professional Memberships, Awards & Recognitions** | Only the criterion maximum (3.1) is defined. `components` is `[]`, and the detailed scoring methodology REQUIRES COLLEGE CONFIRMATION |
+| Score granularity (whole marks, halves …) | Numbers; the backend decides |
+| Which academic years use this template, and who may publish a new one | A template is versioned and assigned per academic year (placeholder assignment) |
+
+Backend responsibility: store the template as versioned reference data; when scoring an appraisal copy the criterion and component maxima for the appraisal's cadre onto its score rows (so later template versions never rewrite history); keep each cadre's criteria at 100 and each criterion's components equal to its maximum.
 
 ---
 
@@ -300,12 +452,21 @@ PROVISIONAL: which fields are required; whether prefilled values stay editable (
 | Field | Type | Notes |
 |---|---|---|
 | `cadre` | `CadreCode` | the appraisal's cadre when scored |
+| `scoringTemplate` | `{ code, name, version }` | the rule set this appraisal is scored against (copied from its academic year at creation) |
 | `maxScore` | integer | sum of `criteria[].maxMarks` (100 for every cadre) |
-| `selfScore` | number \| null | **produced by the backend; no formula is defined by the PDF** |
-| `criteria[]` | exactly 9 | `{ criterion: CriterionCode, maxMarks: integer, selfScore: number \| null }` |
+| `selfScore` | number \| null | **produced by the backend; the documents define no formula** |
+| `criteria[]` | exactly 9 | `{ criterion: CriterionCode, maxMarks: integer, selfScore: number \| null, components: ComponentScoreDto[] }` |
 
-Absent (`null` on the appraisal, `404` on its endpoint) until the backend produces it. **PROVISIONAL:** who or what supplies `selfScore` and when. If the college decides faculty type their own per-criterion scores, a write endpoint would be added; it is deliberately **not** part of this freeze.
-UI behaviour: shows `maxMarks` / `selfScore` from the DTO; before it exists, shows the printed Annexure A maxima for the chosen cadre and "—" for self-score. If `maxScore` differs from the Annexure A total for the cadre, the UI warns.
+`ComponentScoreDto` (**CONFIRMED FROM THE SCORING ANNEXURE**: `label` and `maxMarks`): `{ componentNo: integer, label: string, maxMarks: integer, selfScore: number | null }`.
+- `components` is present for **B1 to B5** (`TEACHING_LEARNING`, `STUDENT_MENTORING`, `FDP_CERTIFICATIONS`, `ADMINISTRATIVE`, `RESEARCH_PUBLICATIONS`) and is `[]` for **B6 to B9** (no breakdown is defined; REQUIRES COLLEGE CONFIRMATION).
+- `componentNo` is the position in that cadre's annexure listing. Components are **not comparable across cadres by number or wording**.
+- Component `maxMarks` of a criterion add up to the criterion `maxMarks` (backend invariant). Component maxima sum to less than `maxScore` because B6 to B9 have none.
+- **REQUIRES COLLEGE CONFIRMATION:** how a component `selfScore` is produced, who supplies it, and whether the criterion `selfScore` is the sum of its components. The backend returns both values; **the frontend never sums or derives either**.
+
+Absent (`null` on the appraisal, `404` on its endpoint) until the backend produces it. If the college decides faculty type their own scores, a write endpoint would be added; it is deliberately **not** part of this freeze.
+UI behaviour: the score sheet shows each criterion's `maxMarks` / `selfScore` and, on request, its components (`label`, `maxMarks`, `selfScore`). Before a score sheet exists it shows the printed maxima (criterion and components) for the chosen cadre and "—" for every self-score. If `maxScore` differs from the Annexure A total for the cadre, the UI warns.
+
+`GET /reference/scoring?academicYear=` returns `ScoringReferenceDto`: the template in force plus, per cadre, each criterion's `maxMarks` and its `components` (`componentNo`, `label`, `maxMarks`). It is the same data as 3.1 and 3.2.
 
 ### 4.19 Reviews: `ReviewDto` · [R] · read-only for faculty
 
@@ -343,7 +504,7 @@ All **PROPOSED — REQUIRES BACKEND IMPLEMENTATION**. "Svc" is the owning servic
 | `GET /faculty/me` | Faculty | any authenticated | `FacultyProfileDto` | resolved from the token |
 | `GET /departments` | Faculty | any | `DepartmentDto[]` | the 8 PDF departments |
 | `GET /academic-years` | Appraisal | any | `AcademicYearDto[]` | PROVISIONAL list |
-| `GET /reference/scoring` | Appraisal | any | criteria + cadre maximum marks (§3) | lets the frontend drop its printed copy later |
+| `GET /reference/scoring?academicYear=` | Appraisal | any | `ScoringReferenceDto`: template in force, criteria, cadre maxima and B1 to B5 components (§3) | lets the frontend drop its printed copy later |
 
 ### Appraisal creation, retrieval, update
 
@@ -493,7 +654,7 @@ Items the PDF does not define. Each is labelled in the UI. Detail and the questi
 | 2 | "Nothing to report" switch | `nothingToReport` |
 | 3 | Totals and counts typed vs derived | `teaching.summary`, `research.journalCounts`, `fundedProjects.summary`, `ipr.patentSummary`, `ipr.bookSummary` |
 | 4 | Average Feedback % one value or per phase | `teaching.summary.averageFeedbackPercent` |
-| 5 | How `selfScore` is produced; who enters it | `scoreSheet` (read-only) |
+| 5 | How a criterion or component `selfScore` is produced; who enters it; whether a criterion score is the sum of its components | `scoreSheet` (read-only), §3.3 |
 | 6 | Digital faculty signature | `declaration.signature` |
 | 7 | HoD / Principal workflow | `reviews`, `PUT …/reviews/*`, statuses after `SUBMITTED` |
 | 8 | Submission step and gate | `POST /submit` validation |
@@ -505,4 +666,7 @@ Items the PDF does not define. Each is labelled in the UI. Detail and the questi
 | 14 | Numeric limits | validation columns |
 | 15 | Academic-year list and the `current` flag | `AcademicYearDto` |
 | 16 | Activity trail; `progress` on summaries | `ActivityDto`, `AppraisalSummaryDto.progress` |
-| 17 | Roles other than FACULTY / HOD / PRINCIPAL | auth |
+\1
+| 18 | B6 to B9 detailed scoring methodology (no components defined) | `components: []` for those criteria, §3.3 |
+| 19 | Which academic years use which scoring template version | `scoreSheet.scoringTemplate`, `AcademicYearDto` |
+| 20 | Whether similarly named components of different cadres are the same thing | `componentNo` is cadre-local; no cross-cadre identity |
