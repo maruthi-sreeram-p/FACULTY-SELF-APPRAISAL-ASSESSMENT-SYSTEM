@@ -110,7 +110,7 @@ Verified against the rendered PDF page: 45 values, 0 mismatches.
 | 9 | Professional Memberships, Awards & Recognitions (`MEMBERSHIPS_AWARDS`) | 5 | 5 | 5 | 5 | 5 |
 | | **Total** | **100** | **100** | **100** | **100** | **100** |
 
-### 3.2 CONFIRMED FROM THE SCORING ANNEXURE: component maximum marks, B1 to B5
+### 3.2 CONFIRMED FROM SOURCE DOCUMENT: component maximum marks, B1 to B5
 
 Source: "Scoring criteria B1 to B5 (Annexure A & B)". For **each cadre**, criteria B1 to B5 are divided into components, each with a maximum mark. Labels are verbatim. For all 25 cadre/criterion pairs the components add up to the criterion maximum in 3.1 (102 components in total).
 
@@ -251,10 +251,15 @@ Source: "Scoring criteria B1 to B5 (Annexure A & B)". For **each cadre**, criter
 |---|---|
 | **How evidence becomes a score**: any rule that turns pass %, feedback, publication counts, FDP counts, thresholds or weights into a component or criterion score | No formula, percentage rule, count rule, threshold table, weighting or automatic scoring exists in the API or the frontend |
 | **Who supplies component and criterion self-scores** (faculty, panel or system) and when | `selfScore` is `null` until the backend supplies it. There is no client write endpoint |
-| **Whether a criterion self-score equals the sum of its components** | Not assumed. The API returns both; the frontend never sums components |
+| **Whether a criterion self-score equals the sum of its components** | **Not assumed, not derived, not validated.** The API returns the criterion maximum, component maximum, criterion self-score and component self-score as four separate values. The frontend never sums components, and the backend must not enforce or compute this relationship until the college confirms it as an explicit rule |
 | **B6 Funded Projects / Consultancy, B7 Patents, Books & IPR, B8 Outreach, B9 Professional Memberships, Awards & Recognitions** | Only the criterion maximum (3.1) is defined. `components` is `[]`, and the detailed scoring methodology REQUIRES COLLEGE CONFIRMATION |
+| **Whether component self-scores are required** | Not required. `selfScore` is nullable at every level; nothing in the API demands a value |
+| **Who enters self-scores** (faculty, panel or system) | Not assumed; there is no client write endpoint |
+| **Whether panel scores use the same component breakdown** | Panel scores are not modelled |
 | Score granularity (whole marks, halves …) | Numbers; the backend decides |
 | Which academic years use this template, and who may publish a new one | A template is versioned and assigned per academic year (placeholder assignment) |
+
+**Validation of self-scores:** until the college confirms otherwise, the API validates only that a value is a number (and, as a provisional sanity check, non-negative). It does **not** enforce `selfScore <= maxMarks`, "criterion = sum of components", "total = sum of criteria", or that any component score is present. If the college confirms such a rule it is added as an explicit, documented, configurable rule.
 
 Backend responsibility: store the template as versioned reference data; when scoring an appraisal copy the criterion and component maxima for the appraisal's cadre onto its score rows (so later template versions never rewrite history); keep each cadre's criteria at 100 and each criterion's components equal to its maximum.
 
@@ -457,7 +462,7 @@ PROVISIONAL: which fields are required; whether prefilled values stay editable (
 | `selfScore` | number \| null | **produced by the backend; the documents define no formula** |
 | `criteria[]` | exactly 9 | `{ criterion: CriterionCode, maxMarks: integer, selfScore: number \| null, components: ComponentScoreDto[] }` |
 
-`ComponentScoreDto` (**CONFIRMED FROM THE SCORING ANNEXURE**: `label` and `maxMarks`): `{ componentNo: integer, label: string, maxMarks: integer, selfScore: number | null }`.
+`ComponentScoreDto` (**CONFIRMED FROM SOURCE DOCUMENT**: `label` and `maxMarks`): `{ componentNo: integer, label: string, maxMarks: integer, selfScore: number | null }`.
 - `components` is present for **B1 to B5** (`TEACHING_LEARNING`, `STUDENT_MENTORING`, `FDP_CERTIFICATIONS`, `ADMINISTRATIVE`, `RESEARCH_PUBLICATIONS`) and is `[]` for **B6 to B9** (no breakdown is defined; REQUIRES COLLEGE CONFIRMATION).
 - `componentNo` is the position in that cadre's annexure listing. Components are **not comparable across cadres by number or wording**.
 - Component `maxMarks` of a criterion add up to the criterion `maxMarks` (backend invariant). Component maxima sum to less than `maxScore` because B6 to B9 have none.
@@ -561,7 +566,7 @@ The frontend currently sends only metadata (mock mode); the real call is multipa
 | Numbers and ranges | `min`/`max`/`step`, percent 0–100, counts ≥0, `to ≥ from` for durations | **Must reject non-integers for counts** (the UI only sets `step`), out-of-range values, bad dates |
 | Enums | `<select>` of the codes | Reject unknown codes |
 | Cadre → maximum marks | Shows Annexure A; warns on mismatch | Authoritative: copies maxima into scores, rejects a cadre not in the PDF list |
-| Self-score | Display only | Authoritative (when and how is PROVISIONAL) |
+| Self-score (total, criterion, component) | Display only; never summed or derived | Authoritative and **separate per level**. Enforces no relationship between levels and no cap at the maximum until the college confirms one |
 | Ownership and roles | none | Faculty edits only own appraisal; reviewers read the appraisals in scope (PROVISIONAL: HoD scope = own department) |
 | Locking | Read-only UI when status ≥ `SUBMITTED` | `409` on any write after lock |
 | Concurrency | Sends `If-Match` | `412` on stale version |
@@ -670,3 +675,6 @@ Items the PDF does not define. Each is labelled in the UI. Detail and the questi
 | 18 | B6 to B9 detailed scoring methodology (no components defined) | `components: []` for those criteria, §3.3 |
 | 19 | Which academic years use which scoring template version | `scoreSheet.scoringTemplate`, `AcademicYearDto` |
 | 20 | Whether similarly named components of different cadres are the same thing | `componentNo` is cadre-local; no cross-cadre identity |
+| 21 | Whether component self-scores are required; who enters self-scores | `selfScore` nullable at every level |
+| 22 | Whether a criterion self-score equals the sum of its components (and the total the sum of criteria) | not enforced, not derived; four separate values |
+| 23 | Whether panel scores use the same component breakdown | panel scores not modelled |

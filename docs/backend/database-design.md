@@ -4,7 +4,11 @@
 
 Related: [domain-model.md](domain-model.md) · [api-contract.md](api-contract.md) · [service-boundaries.md](service-boundaries.md)
 
-**Verified:** every `sql` block in this document was executed, in order, on a real PostgreSQL engine (PGlite, a WebAssembly build of PostgreSQL): 4 schemas, 38 tables, no errors. The migration tests returned zero offending rows (each cadre = 100 over 9 criteria; every set of components adds up to its criterion maximum) and listed exactly the four criteria without components (B6 to B9). Negative probes were rejected as intended: second appraisal for the same faculty + year, two "current" years, bad year label, unknown cadre / indexing / document type / role, pass % > 100, duration end before start, duplicate research-metric platform, a tenth criterion, self-score above max (criterion and component), review role other than HOD/PRINCIPAL, a duplicate component number, a duplicate template version, and **a component set that does not add up** (rejected at COMMIT, while an edit that stays balanced inside one transaction is accepted). Also exercised: template versioning (a v2 template alongside v1), an appraisal remembering its template, copying of criterion and component maxima onto the appraisal's score rows, the `version` bump, `updated_at` trigger, score-sheet view and cascade delete.
+**Verified:** every `sql` block in this document was executed, in order, on a real PostgreSQL engine (PGlite, a WebAssembly build of PostgreSQL): 4 schemas, 39 tables, no errors.
+
+- **Confirmed template rules are enforced.** Every cadre totals 100 over 9 criteria; every set of components adds up to its criterion maximum (a set that does not add up is rejected at COMMIT, while a balanced edit inside one transaction is accepted); exactly the four criteria B6 to B9 have no components; no tenth criterion; no duplicate component number or template version; unknown cadre, indexing, document type and role are rejected; plus the appraisal-level rules (one appraisal per faculty and year, one current academic year, and so on).
+- **Unconfirmed score relationships are NOT enforced.** Accepted by the database, on purpose: criterion self-score 24 with component self-scores adding up to 25; a total that is not the sum of the criteria; a self-score above its maximum; a criterion score with no component scores; component scores left empty; fractional marks. The only sign rule rejected is a negative mark (PROVISIONAL).
+- **Scoring mechanics.** Template versioning (a v2 template alongside v1), an appraisal remembering its template, copying of criterion and component maxima onto the score rows (9 criteria, 21 components for an Assistant Professor, maximum 100, components covering B1 to B5 only = 82), the `version` bump, `updated_at` trigger and cascade delete through the score sheet.
 
 ## 1. Decisions
 
@@ -22,7 +26,8 @@ Related: [domain-model.md](domain-model.md) · [api-contract.md](api-contract.md
 | Dates | `date` for dates; month-year stored as `date` = first day of month (API `YYYY-MM`) | native comparison/sorting |
 | Concurrency | `appraisals.version`; write with `UPDATE … WHERE id = $1 AND version = $2` | `If-Match` / `412` |
 | Scoring rules | **Versioned `scoring_templates`** → cadre → criterion → **component** → maximum marks; each academic year points at the template in force; each appraisal copies that template id and, when scored, copies the maxima onto its own score rows | rules can change by year or version without rewriting history. See §10 |
-| Scoring formula | **none stored, none modelled.** Only maximum marks (criterion and component) and self-scores supplied by the backend | the source documents define no calculation. REQUIRES COLLEGE CONFIRMATION |
+| Scoring formula | **none stored, none modelled.** Maximum marks (criterion and component) and three independent self-score values (total, criterion, component), each supplied by the backend | the source documents define no calculation and no relationship between the levels. REQUIRES COLLEGE CONFIRMATION |
+| Score constraints | the database validates **template maximum marks** only; it enforces **no relationship between self-scores** and does not cap a self-score at its maximum | an unconfirmed rule must not be baked into the schema. See 4.6 |
 | Nullability | content columns are **nullable**; only keys and bookkeeping are `NOT NULL` | "which fields are required" is a PROVISIONAL UI rule (api-contract §9 #1), so the database must not hard-code it |
 | Lengths | contract maxima enforced in the API; add `CHECK (char_length(col) <= n)` once the college confirms limits | avoids freezing guesses |
 
@@ -656,34 +661,41 @@ CREATE TABLE appraisal.document_checklist_ticks (
   PRIMARY KEY (appraisal_id, document_type)
 );
 
--- Score sheet, criterion level. Backend-owned. The documents define maximum marks (criterion and component); NO formula.
-CREATE TABLE appraisal.appraisal_scores (
-  appraisal_id  uuid NOT NULL REFERENCES appraisal.appraisals(id) ON DELETE CASCADE,
-  criterion     appraisal.criterion_code NOT NULL REFERENCES appraisal.score_criteria(code),
-  max_marks     smallint NOT NULL CHECK (max_marks >= 0),      -- COPIED from cadre_max_marks when scored (history-safe)
-  self_score    numeric(5,2) CHECK (self_score >= 0),          -- NULL until the backend supplies it
-  PRIMARY KEY (appraisal_id, criterion),
-  CHECK (self_score IS NULL OR self_score <= max_marks)        -- sanity check; PROVISIONAL
+-- SCORE SHEET (backend-owned).
+-- The documents define MAXIMUM marks (criterion and component) and give NO rule for producing self-scores or for
+-- relating them to one another. So the three levels below are SEPARATE stored values, each supplied by the backend:
+--     total self-score       appraisal_score_sheets.self_score
+--     criterion self-score   appraisal_scores.self_score
+--     component self-score   appraisal_component_scores.self_score
+-- Nothing derives one from another and nothing constrains how they relate (see 4.6, constraints that are absent).
+CREATE TABLE appraisal.appraisal_score_sheets (        -- a row exists once the backend has produced a score sheet
+  appraisal_id  uuid PRIMARY KEY REFERENCES appraisal.appraisals(id) ON DELETE CASCADE,
+  cadre         appraisal.cadre_code NOT NULL,         -- the cadre the maxima were copied for
+  self_score    numeric(6,2) CHECK (self_score >= 0),  -- total; NULL until the backend supplies it. Non-negative assumed (PROVISIONAL)
+  produced_at   timestamptz NOT NULL DEFAULT now()
 );
--- Totals are derived, never stored:
-CREATE VIEW appraisal.v_score_sheet AS
-SELECT s.appraisal_id,
-       SUM(s.max_marks)  AS max_score,
-       CASE WHEN COUNT(s.self_score) = COUNT(*) THEN SUM(s.self_score) END AS self_score
-FROM appraisal.appraisal_scores s GROUP BY s.appraisal_id;
 
--- Component-level scores (B1 to B5). Backend-owned. NO formula: how a component score is produced is
--- REQUIRES COLLEGE CONFIRMATION. Rows exist only for criteria that have components.
+CREATE TABLE appraisal.appraisal_scores (               -- criterion level (9 rows)
+  appraisal_id  uuid NOT NULL REFERENCES appraisal.appraisal_score_sheets(appraisal_id) ON DELETE CASCADE,
+  criterion     appraisal.criterion_code NOT NULL REFERENCES appraisal.score_criteria(code),
+  max_marks     smallint NOT NULL CHECK (max_marks >= 0),      -- COPIED from scoring_criterion_marks when scored (history-safe)
+  self_score    numeric(5,2) CHECK (self_score >= 0),          -- NULL until the backend supplies it. Non-negative assumed (PROVISIONAL)
+  PRIMARY KEY (appraisal_id, criterion)
+);
+
+-- Component level (B1 to B5 only; B6 to B9 have none). Granularity is undefined, hence numeric.
 CREATE TABLE appraisal.appraisal_component_scores (
-  appraisal_id  uuid NOT NULL REFERENCES appraisal.appraisals(id) ON DELETE CASCADE,
+  appraisal_id  uuid NOT NULL REFERENCES appraisal.appraisal_score_sheets(appraisal_id) ON DELETE CASCADE,
   component_id  uuid NOT NULL REFERENCES appraisal.scoring_components(id),
   max_marks     smallint NOT NULL CHECK (max_marks >= 0),      -- COPIED from the component when scored (history-safe)
-  self_score    numeric(5,2) CHECK (self_score >= 0),          -- NULL until the backend supplies it; granularity undefined, so numeric
-  PRIMARY KEY (appraisal_id, component_id),
-  CHECK (self_score IS NULL OR self_score <= max_marks)        -- sanity check; PROVISIONAL
+  self_score    numeric(5,2) CHECK (self_score >= 0),          -- NULL until the backend supplies it. Non-negative assumed (PROVISIONAL)
+  PRIMARY KEY (appraisal_id, component_id)
 );
--- Deliberately NO constraint or trigger tying appraisal_scores.self_score to the sum of its component scores:
--- whether a criterion score is that sum REQUIRES COLLEGE CONFIRMATION. The frontend never sums them.
+
+-- Maximum marks only: the sum of the copied maxima (confirmed to be 100 for every cadre). No self-score arithmetic.
+CREATE VIEW appraisal.v_score_sheet_max AS
+SELECT s.appraisal_id, SUM(s.max_marks) AS max_score
+FROM appraisal.appraisal_scores s GROUP BY s.appraisal_id;
 
 -- HoD and Principal. PROVISIONAL workflow.
 CREATE TABLE appraisal.appraisal_reviews (
@@ -715,6 +727,24 @@ $$ BEGIN NEW.updated_at := now(); RETURN NEW; END $$;
 CREATE TRIGGER trg_appraisals_touch BEFORE UPDATE ON appraisal.appraisals
   FOR EACH ROW EXECUTE FUNCTION appraisal.touch_updated_at();
 ```
+
+### 4.6 Constraints that are deliberately absent
+
+The scoring documents state maximum marks. They do **not** state how self-scores are produced, required or related. The schema therefore enforces only what is confirmed, and leaves the rest to configurable, API-level validation once the college decides.
+
+| Not enforced by the database | Why |
+|---|---|
+| criterion `self_score` = sum of its component `self_score`s | whether a criterion score is the sum of its components is **not confirmed** |
+| total `self_score` = sum of criterion `self_score`s | not stated either; the total is a separate supplied value |
+| `self_score` <= `max_marks` (criterion or component) | the documents do not say a self-score may never exceed its maximum (for example whether bonus marks exist) |
+| component self-scores must be present, or present for every component | whether component scores are required is **not confirmed** |
+| a component self-score only where the criterion has one, or vice versa | the levels are independent |
+| the same component breakdown for panel scores | whether panel scores use it is **not confirmed**, and panel scores are not modelled |
+| scoring granularity beyond `numeric` | undefined |
+
+**What the database does validate** (template integrity, confirmed from the annexures): every cadre has the 9 criteria totalling 100; where components exist they add up to the criterion maximum (`trg_components_sum`, checked at COMMIT); component numbers are unique per cadre and criterion; maxima are non-negative; copied maxima exist on the score rows. The only sign rule on self-scores is `>= 0`, marked PROVISIONAL.
+
+If the college later confirms a relationship (for example "criterion score = sum of its components"), add it as an **explicit, documented rule**, for example a validation in the Appraisal Service driven by a flag on the scoring template, or a new constraint in a migration, and not as an assumption.
 
 ## 5. DDL: `documents` schema (Document Service)
 
@@ -786,7 +816,8 @@ CREATE TABLE auth.user_roles (
 | `supportingDocuments.enclosed` / `othersSpecify` | `document_checklist_ticks` / `appraisal_summaries.documents_others_specify` |
 | `declaration` | `declarations` |
 | `nothingToReport[]` | `appraisal_section_flags` |
-| `scoreSheet` (read-only): criterion rows | `appraisal_scores` + `v_score_sheet` |
+| `scoreSheet` (read-only): header (`cadre`, total `selfScore`) | `appraisal_score_sheets` |
+| `scoreSheet.criteria[]` (read-only): criterion rows | `appraisal_scores` (`maxMarks` copied, `selfScore` supplied); `maxScore` = `v_score_sheet_max` |
 | `scoreSheet.criteria[].components[]` (read-only, B1 to B5) | `appraisal_component_scores` joined to `scoring_components` (`componentNo`, `label`, `maxMarks`) |
 | `scoreSheet.scoringTemplate` | `appraisals.scoring_template_id` → `scoring_templates` |
 | `GET /reference/scoring?academicYear=` | `academic_years.scoring_template_id` → `scoring_templates`, `scoring_criterion_marks`, `scoring_components` |
@@ -824,28 +855,37 @@ CREATE TABLE auth.user_roles (
 
 Sources: the original PDF's **Annexure A** (criterion maximum marks per cadre) and the **scoring annexure for B1 to B5** (component maximum marks per cadre). B1 to B5 correspond to the first five score-sheet criteria: Teaching & Learning, Student Mentoring, FDPs / Certifications, Administrative, Research & Publications.
 
-### CONFIRMED FROM THE SCORING ANNEXURE
+### CONFIRMED FROM SOURCE DOCUMENT
 
-| Fact | In the model |
+Sources: the original PDF's **Annexure A** and the **scoring annexure for B1 to B5**.
+
+| Confirmed fact | In the model |
 |---|---|
-| For each cadre, criteria B1 to B5 are split into components, each with a maximum mark | `scoring_components` (102 rows across the five cadres) |
-| Components of a criterion add up to that criterion's maximum for that cadre (verified for all 25 cadre/criterion pairs) | trigger `trg_components_sum` + migration test 2 |
-| Component wording and number differ between cadres (Lecturer B5 has 3 components, Assistant Professor B5 has 5; Professor B2 has 3, the others 4) | components keyed by `(template, cadre, criterion, component_no)`; labels verbatim; **no cross-cadre identity is assumed** |
-| Criterion maxima per cadre and the total of 100 | `scoring_criterion_marks` + migration test 1 |
+| **B1 to B5 maximum marks** (criterion level, per cadre) | `scoring_criterion_marks` (rows for B1 to B5) |
+| **B1 to B5 component definitions** (the components that exist for each cadre and criterion, with verbatim labels) | `scoring_components` (102 rows across the five cadres) |
+| **Component maximum marks**, adding up to the criterion maximum for every cadre (25 cadre/criterion pairs verified) | `scoring_components.max_marks`; trigger `trg_components_sum`; migration test 2 |
+| **Cadre-specific component differences**: set, number and wording differ by cadre (Lecturer B5: 3 components, Assistant Professor B5: 5; Professor B2: 3, the others 4) | components keyed by `(template, cadre, criterion, component_no)`; labels verbatim; no cross-cadre identity is assumed |
+| **B6 to B9 criterion maximum marks** (Annexure A); these four criteria have no components | `scoring_criterion_marks` rows for B6 to B9; no component rows |
+| The nine criteria, a total of 100 per cadre, no tenth criterion | `score_criteria`; migration test 1 |
 
 Component rows are **only B1 to B5**, so for any cadre they add up to less than 100 (for example 82 for an Assistant Professor, the 100 minus B6 to B9's 18). Never compare a component total with the appraisal total.
 
-### REQUIRES COLLEGE CONFIRMATION (nothing in the source documents defines it, so nothing is modelled or calculated)
+### REQUIRES COLLEGE CONFIRMATION
 
-| Open point | Consequence for the model |
+Nothing in the source documents defines the following, so nothing is modelled, enforced or calculated for it.
+
+| Not confirmed | Consequence for the model |
 |---|---|
-| How evidence becomes a component score (pass %, feedback, publication counts, FDP counts, thresholds, weights) | no formula, rule, threshold or weight tables exist. `self_score` is just a value supplied by the backend |
-| Who supplies a component self-score (faculty, panel or the system) and when | the column is nullable; the supplier is not recorded or assumed |
-| Whether a criterion's self-score is the sum of its components | **not enforced.** `appraisal_scores.self_score` and `appraisal_component_scores.self_score` are independent columns |
-| Score granularity (whole marks, halves …) | `numeric(5,2)` |
-| Components for **B6 Funded Projects / Consultancy, B7 Patents, Books & IPR, B8 Outreach, B9 Professional Memberships, Awards & Recognitions** | none defined. Their criterion maximum stays as in Annexure A; **no component rows exist**, and their detailed scoring methodology REQUIRES COLLEGE CONFIRMATION |
+| **How component self-scores are calculated** (any rule using pass %, feedback, publication counts, FDP counts, thresholds, weights) | no formula, rule, threshold or weight tables exist; `self_score` is a value supplied by the backend |
+| **Whether component self-scores are required** | the column is nullable; nothing requires a value |
+| **Whether criterion self-score equals the sum of component self-scores** | **not enforced and not derived.** Criterion and component self-scores are independent columns; see 4.6 |
+| **Who enters self-scores** (faculty, panel or system) | the supplier is not recorded or assumed |
+| **Whether panel scores use the same component breakdown** | panel scores are not modelled |
+| **Scoring granularity** (whole marks, halves, decimals) | `numeric` |
+| **B6 to B9 detailed scoring methodology** | those criteria stay criterion-level only; no component rows |
 | Which academic years use this rule set | `academic_years.scoring_template_id` is a placeholder assignment |
-| Whether the annexure's "Annexure A & B" labelling means the first part repeats the original Annexure A | the original Annexure A is treated as the criterion-maximum source; the component tables as the B1 to B5 source |
+| Whether the annexure's "Annexure A & B" labelling means its first part repeats the original Annexure A | the original Annexure A is treated as the criterion-maximum source; the component tables as the B1 to B5 source |
+
 
 ### Versioning: rules that can change by academic year
 
@@ -856,8 +896,9 @@ ScoringTemplate (code, version, status)            <- one per rule set; ACTIVE/R
 
 AcademicYear ──► ScoringTemplate                   <- the rule set in force for the year
 Appraisal    ──► ScoringTemplate                   <- copied at creation: the rules it is scored against, forever
-Appraisal ─► AppraisalScore (criterion)            <- max_marks copied, self_score from the backend
-          └► AppraisalComponentScore (component)   <- max_marks copied, self_score from the backend
+Appraisal ─► ScoreSheet (total)                    <- self_score supplied by the backend
+          ├► AppraisalScore (criterion)            <- max_marks copied, self_score supplied (independent)
+          └► AppraisalComponentScore (component)   <- max_marks copied, self_score supplied (independent)
 ```
 
 - A rule change is a **new template version** (for example `SVEC-SCORING` v2) assigned to later academic years. Appraisals already created keep pointing at v1, and their score rows hold copied maxima, so history never changes.

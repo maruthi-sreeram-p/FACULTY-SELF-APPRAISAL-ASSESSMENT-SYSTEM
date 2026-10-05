@@ -193,7 +193,8 @@ Two modelling choices worth stating:
 | 5 | `self_score` (criterion and component) is never calculated by the frontend. The backend supplies it by a mechanism the documents do not define | **PROVISIONAL** |
 | 5a | Within a template, a cadre's components for a criterion add up to that criterion's maximum, wherever components exist (B1 to B5) | firm (scoring annexure, checked for all 25 pairs) |
 | 5b | Components exist only for B1 to B5. B6 to B9 have none; a component total is therefore **not** comparable with the 100 total | firm for the current annexure |
-| 5c | A criterion's self-score is **not** assumed to equal the sum of its components | **REQUIRES COLLEGE CONFIRMATION** |
+| 5c | A criterion's self-score is **not** assumed, derived or validated to equal the sum of its components; criterion maximum, component maximum, criterion self-score and component self-score are four separate values returned by the backend | **REQUIRES COLLEGE CONFIRMATION** |
+| 5e | No relationship between self-scores is enforced (no sum rule, no cap at the maximum, no required component scores). Only template maxima are validated | firm until the college confirms a rule, which would then be added explicitly |
 | 5d | An appraisal keeps the scoring template it was created under; a rule change is a new template version, never an edit of an ACTIVE one | proposed policy |
 | 6 | `Research Metric` has at most one row per platform (3) | firm (PDF grid) |
 | 7 | A `Review` exists at most once per role per appraisal | firm |
@@ -270,7 +271,7 @@ erDiagram
 
 Conceptual chain, as requested: `ScoringTemplate → Cadre → Criterion → ScoringComponent → MaximumMarks`, and on the appraisal side `Appraisal → SelfScore / ComponentSelfScore`.
 
-### CONFIRMED FROM THE SCORING ANNEXURE
+### CONFIRMED FROM SOURCE DOCUMENT
 - B1 Teaching & Learning, B2 Student Mentoring, Guidance & Achievements, B3 FDPs / Certifications, B4 Administrative, Curriculum & Quality Contributions and B5 Research & Publications are each divided into components with a maximum mark, **separately for each of the five cadres**.
 - For every cadre and criterion the components add up to the criterion maximum from Annexure A (all 25 pairs checked; 102 components in total).
 - The set, number and wording of components differ by cadre (for example Lecturer B5 has 3 components, Assistant Professor B5 has 5, Professor B2 has 3). A component is identified by its position within the cadre's list, and **similarly named components of different cadres are not assumed to be the same thing**.
@@ -278,7 +279,9 @@ Conceptual chain, as requested: `ScoringTemplate → Cadre → Criterion → Sco
 
 ### REQUIRES COLLEGE CONFIRMATION
 - **The scoring rules themselves.** How evidence (pass %, feedback, number of publications, FDP counts …) becomes a component score is not defined. No formula, threshold, weight or automatic rule is modelled.
-- Who supplies component self-scores (faculty, panel or system) and at what point.
+- Who supplies component self-scores (faculty, panel or system) and at what point, and whether component self-scores are required at all.
+- Whether panel scores use the same component breakdown.
+- Scoring granularity (whole marks, halves, decimals).
 - Whether a criterion self-score equals the sum of its component scores (the model deliberately does not enforce it).
 - **B6 to B9** (Funded Projects / Consultancy, Patents, Books & IPR, Outreach, Professional Memberships, Awards & Recognitions): only the criterion maximum is defined (Annexure A). They have no components, and their detailed scoring methodology is not defined.
 - Which academic years the current template applies to.

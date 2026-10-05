@@ -52,14 +52,17 @@ export const totalMax = (cadre: CadreCode) => CRITERIA.reduce((sum, c) => sum + 
 /* -------------------------------------------------------------------------------------------------
  * Scoring components, criteria B1 to B5 (source: "Scoring criteria B1 to B5 (Annexure A & B)").
  *
- * CONFIRMED FROM THE SCORING ANNEXURE: for each cadre, B1-B5 are broken into components with a maximum
+ * CONFIRMED FROM SOURCE DOCUMENT: for each cadre, B1-B5 are broken into components with a maximum
  * mark each. Labels are verbatim. Per cadre and criterion the components sum to the criterion maximum above.
  *
- * REQUIRES COLLEGE CONFIRMATION (nothing below defines it, so nothing in this app calculates it):
- *  - how evidence (courses, pass %, feedback, publications, FDPs ...) is turned into a component score;
- *  - who supplies a component self-score, and whether a criterion self-score is the sum of its components;
+ * REQUIRES COLLEGE CONFIRMATION (nothing below defines it, so nothing in this app calculates, enforces or assumes it):
+ *  - how component self-scores are calculated (pass %, feedback, publication counts, FDP counts, thresholds ...);
+ *  - whether component self-scores are required;
+ *  - whether a criterion self-score equals the sum of its component self-scores. Criterion maximum, component
+ *    maximum, criterion self-score and component self-score are four SEPARATE values; the app never sums them;
+ *  - who enters self-scores, whether panel scores use the same breakdown, and the scoring granularity;
  *  - components for B6-B9 (Funded Projects, Patents/Books/IPR, Outreach, Memberships/Awards): none are defined,
- *    only their criterion maximum.
+ *    only their criterion maximum, so they stay criterion-level only.
  *
  * Components differ in wording and number between cadres, so their identity is the position `no` within a
  * (cadre, criterion) list. Do not assume that component 3 of one cadre equals component 3 of another.

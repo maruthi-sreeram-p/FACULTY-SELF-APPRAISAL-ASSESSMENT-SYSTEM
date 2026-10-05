@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronRight, Info } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { CadreCode, ComponentScoreDto, CriterionCode, ScoreSheetDto } from '../../contract/dto'
 import { CADRES, COMPONENT_CRITERIA, CRITERIA, MAX_MARKS, componentsFor, isCadreCode, totalMax } from '../../data/scoring'
@@ -21,9 +21,13 @@ const Breakable = ({ text }: { text: string }) => (
  *
  * DISPLAY ONLY. The backend is the source of truth for maximum marks and self-scores (ScoreSheetDto), at criterion
  * and component level. Until it returns a score sheet, the maximum marks shown are the printed ones for the chosen
- * cadre (scoring.ts). Nothing is calculated here: no component score, and no criterion total from components.
+ * cadre (scoring.ts). Criterion maximum, component maximum, criterion self-score and component self-score are four
+ * SEPARATE values. Nothing is calculated here: no component score, and no criterion total from components.
  *
- * REQUIRES COLLEGE CONFIRMATION: how a component score is produced, and B6 to B9 breakdowns (none are defined).
+ * REQUIRES COLLEGE CONFIRMATION: how a component score is produced, whether component scores are required, who
+ * enters them, whether a criterion self-score equals the sum of its components, whether panel scores use the same
+ * breakdown, the scoring granularity, and B6 to B9 breakdowns (none are defined).
+ * (ScoreSheet.test.tsx proves the "no summation" behaviour with an explicit test fixture.)
  */
 export function ScoreSheet({ scoreSheet, cadre, year }: { scoreSheet: ScoreSheetDto | null; cadre: CadreCode | null; year: string }) {
   const uid = useId()
@@ -78,6 +82,16 @@ export function ScoreSheet({ scoreSheet, cadre, year }: { scoreSheet: ScoreSheet
             )}
           </div>
         </div>
+
+        {open.size > 0 && (
+          <p role="note" className="flex items-start gap-2.5 border-b border-border-subtle bg-warning-subtle/50 px-5 py-3 text-[13px] text-secondary">
+            <Info size={15} aria-hidden className="mt-0.5 shrink-0 text-warning" />
+            <span>
+              The college has not yet defined how component scores are produced. Self-scores are shown exactly as supplied by the
+              system; a criterion&rsquo;s Self-Score is <strong className="font-semibold text-primary">not calculated from its components</strong>.
+            </span>
+          </p>
+        )}
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-[13.5px] sm:min-w-[480px]">
@@ -147,7 +161,7 @@ export function ScoreSheet({ scoreSheet, cadre, year }: { scoreSheet: ScoreSheet
 
         <div className="space-y-2 border-t border-border-subtle px-5 py-3 text-[13px] text-muted">
           <p className="flex flex-wrap items-center gap-2">
-            <ProvisionalTag note="The scoring annexure gives maximum marks for the components of B1 to B5, but no rule for turning evidence into a component score, no statement of who enters scores, and no component breakdown for B6 to B9. This application displays scores supplied by the system and calculates nothing, including criterion totals from components." />
+            <ProvisionalTag note="The scoring annexure gives maximum marks for the components of B1 to B5. It does not say how a component score is produced, whether component scores are required, who enters scores, whether a criterion score is the sum of its components, whether panel scores use the same breakdown, or what the scoring granularity is. It has no component breakdown for B6 to B9. This application displays scores supplied by the system and calculates nothing." />
             <span>{scoreSheet?.selfScore != null ? 'Self-scores are provided by the system.' : 'Self-scores will appear once the system provides them.'} “Any Other Contributions” has no score row.</span>
           </p>
         </div>

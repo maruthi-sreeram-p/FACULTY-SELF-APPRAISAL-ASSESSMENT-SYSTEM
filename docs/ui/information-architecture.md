@@ -58,7 +58,7 @@ Stepper groups: **Part A**, **Part B**, **Declaration & approvals**, **Submissio
 
 The score sheet now has two levels: **criterion** (maximum marks, Annexure A) and, for B1 to B5, **scoring components** (maximum marks per component, from the scoring annexure "Scoring criteria B1 to B5 (Annexure A & B)").
 
-### CONFIRMED FROM THE SCORING ANNEXURE
+### CONFIRMED FROM SOURCE DOCUMENT
 - B1 Teaching & Learning, B2 Student Mentoring, B3 FDPs / Certifications, B4 Administrative and B5 Research & Publications are divided into components with a maximum mark, **separately for each cadre**. Labels are verbatim; per cadre and criterion the components add up to the criterion maximum (25 pairs, 102 components; tables in [api-contract.md §3](../backend/api-contract.md#3-scoring-reference)).
 - Components differ in number and wording by cadre, so they are shown only for the faculty member's own cadre (or the cadre chosen in the reference viewer) and never matched across cadres.
 - B1 to B5 are the criteria whose Part B sections are steps B1 to B5 in the stepper (Teaching, Mentoring, FDPs, Administrative, Research).
@@ -72,12 +72,14 @@ The score sheet now has two levels: **criterion** (maximum marks, Annexure A) an
 | Self-scores | Displayed only when the backend returns them. **No component score and no criterion total is calculated or summed by the frontend** |
 | "Scoring annexure: components of B1 to B5" | Reference viewer with a cadre selector (defaults to the faculty member's cadre) listing every criterion with its components and maxima |
 | Before a score sheet exists | The printed criterion and component maxima for the chosen cadre are shown, with "—" for self-scores |
-| Notice | An amber Provisional tag states what is not defined |
+| Methodology notice | While any breakdown is open, a note states that the college has not yet defined how component scores are produced and that a criterion's Self-Score is **not calculated from its components** |
+| Footer | An amber Provisional tag lists what is not defined (how scores are produced, whether required, who enters them, sum rule, panel scores, granularity, B6 to B9) |
 
 ### REQUIRES COLLEGE CONFIRMATION
 - **The scoring rules**: how evidence (pass %, feedback, publication counts, FDP counts, and so on) becomes a component score. Not defined, so no formula, threshold, weight or automatic scoring exists anywhere in the app.
-- Who supplies component and criterion self-scores, and when.
-- Whether a criterion self-score is the sum of its components.
+- Who supplies component and criterion self-scores, and when; whether component self-scores are required.
+- Whether a criterion self-score is the sum of its components (not implied anywhere in the UI).
+- Whether panel scores use the same component breakdown, and the scoring granularity.
 - **B6 Funded Projects / Consultancy, B7 Patents, Books & IPR, B8 Outreach, B9 Professional Memberships, Awards & Recognitions**: only the criterion maximum from Annexure A is defined; their detailed scoring methodology is undefined.
 
 ## Data flow (frozen contract)

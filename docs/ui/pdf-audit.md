@@ -115,28 +115,34 @@ A second source was added: **"Scoring criteria B1 to B5 (Annexure A & B)"**, a 5
 
 **About the source.** The document itself could not be opened from this machine, so the figures were taken from the transcription supplied with the request. They were checked for internal consistency: for every one of the 25 cadre/criterion pairs the components add up exactly to the criterion maximum already confirmed from the original PDF's Annexure A, and the stored data matches the supplied text for all 102 components (label and number). Please compare the tables in [api-contract.md §3.2](../backend/api-contract.md#3-scoring-reference) with the physical document once.
 
-### CONFIRMED FROM THE SCORING ANNEXURE
+### CONFIRMED FROM SOURCE DOCUMENT
 
-| Item | Status |
+| Confirmed | Status |
 |---|---|
-| B1 to B5 are split into components with maximum marks, for each of the five cadres (102 components in total: Lecturer 19, Assistant Professor 21, Senior Assistant Professor 21, Associate Professor 21, Professor 20) | confirmed |
-| Components of a criterion add up to its Annexure A maximum, for every cadre | confirmed (verified) |
-| Components differ in number and wording between cadres (for example Lecturer B5: 3, Assistant Professor B5: 5; Professor B2: 3, others 4) | confirmed. Components are identified by position within a cadre's list and are not matched across cadres |
-| Criterion maxima and the 100 total per cadre (Annexure A) | confirmed (unchanged) |
-| There are exactly 9 scoring criteria; "Any Other Contributions" has none | confirmed (unchanged) |
+| **B1 to B5 maximum marks** (criterion level, per cadre; original PDF Annexure A) | confirmed (unchanged) |
+| **B1 to B5 component definitions**: the components that exist for each cadre and criterion, with their wording (102 in total: Lecturer 19, Assistant Professor 21, Senior Assistant Professor 21, Associate Professor 21, Professor 20) | confirmed |
+| **Component maximum marks**, which add up to the criterion maximum for every cadre | confirmed (verified for all 25 cadre/criterion pairs) |
+| **Cadre-specific component differences**: the set, number and wording of components differ between cadres (for example Lecturer B5: 3, Assistant Professor B5: 5; Professor B2: 3, the others 4) | confirmed. Components are identified by position within a cadre's list and are not matched across cadres |
+| **B6 to B9 criterion maximum marks** (Funded Projects / Consultancy, Patents, Books & IPR, Outreach, Professional Memberships, Awards & Recognitions) | confirmed (original PDF). These four criteria have **no components** in the source |
+| The nine criteria, 100 total per cadre, no tenth criterion ("Any Other Contributions" is not scored) | confirmed (unchanged) |
 
 ### REQUIRES COLLEGE CONFIRMATION
 
-| # | Question |
+| # | Not confirmed |
 |---|---|
-| 14 | **How is a component score produced?** The annexure gives maximum marks only. No percentage rule, publication or FDP count rule, threshold table, weighting or automatic scoring is given, so none is implemented |
-| 15 | Who supplies component and criterion self-scores (faculty, appraisal panel or the system), and at what point in the process? |
-| 16 | Is a criterion's self-score the **sum** of its component scores? (The app stores both and never sums them.) |
-| 17 | **B6 to B9** (Funded Projects / Consultancy, Patents, Books & IPR, Outreach, Professional Memberships, Awards & Recognitions): only criterion maxima exist. Will component breakdowns be provided? Until then, their detailed scoring methodology is undefined |
+| 14 | **How component self-scores are calculated.** The annexure gives maximum marks only. No percentage rule, publication or FDP count rule, threshold table, weighting or automatic scoring is given, so none is implemented |
+| 21 | **Whether component self-scores are required** at all |
+| 16 | **Whether a criterion self-score equals the sum of its component self-scores.** Not assumed, derived or validated anywhere: criterion maximum, component maximum, criterion self-score and component self-score are four separate values returned by the backend |
+| 15 | **Who enters self-scores** (faculty, appraisal panel or the system), and at what point in the process |
+| 22 | **Whether panel scores use the same component breakdown** (panel scores are not modelled) |
+| 19 | **Scoring granularity**: whole marks, halves or decimals |
+| 17 | **B6 to B9 detailed scoring methodology.** Only criterion maxima exist. Will component breakdowns be provided? Until then they stay criterion-level only |
 | 18 | Which academic years does this scoring template apply to, and how are future changes versioned? (The model supports a new template version per year.) |
-| 19 | Score granularity: whole marks, halves or decimals? |
 | 20 | The annexure is labelled "Annexure A & B". Does its Annexure A repeat the original PDF's Annexure A (criterion maxima), and what is Annexure B? |
 
 ### What the application does and does not do
-- **Does:** store and show the maximum marks of each criterion and, for B1 to B5, of each component for the faculty member's cadre; provide a reference viewer for every cadre; accept component and criterion self-scores *from the backend* and display them; keep scoring rules versioned by academic year in the proposed data model.
-- **Does not:** calculate, estimate or suggest any score; derive a criterion score from components; infer B6 to B9 components; assume that components of different cadres correspond; add any rule not present in the documents.
+- **Does:** store and show the maximum marks of each criterion and, for B1 to B5, of each component for the faculty member's cadre; provide a reference viewer for every cadre; accept total, criterion and component self-scores *from the backend* and display each exactly as supplied; keep scoring rules versioned by academic year in the proposed data model; tell the user, whenever the breakdown is open, that component scoring is not yet defined by the college.
+- **Does not:** calculate, estimate or suggest any score; derive a criterion score from components or a total from criteria; apply any threshold, percentage, publication-count or FDP-count rule; infer B6 to B9 components; assume that components of different cadres correspond; require, cap or reconcile self-scores; add any rule not present in the documents.
+
+### Test data
+The case "criterion self-score 24 while its components add up to 25" was used to prove that the frontend only displays what the backend returns. It exists **only as an explicit test fixture** (`frontend/src/test/fixtures/scoreSheet.mismatch.fixture.ts`, labelled "TEST FIXTURE. NOT DEMO DATA") used by the automated tests. The app, the mock API and every page return **no scores** (`scoreSheet: null`, all self-scores shown as "—"), so apparently inconsistent scoring never appears as production or demo data. A test fails if the fixture is imported by any non-test code.

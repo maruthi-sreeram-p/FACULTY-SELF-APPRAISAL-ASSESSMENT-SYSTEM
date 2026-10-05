@@ -242,7 +242,7 @@ export interface AppraisalContentDto {
 export type AppraisalSectionKey = keyof AppraisalContentDto
 
 /**
- * One scoring component of criteria B1 to B5 (CONFIRMED FROM THE SCORING ANNEXURE: label and maximum).
+ * One scoring component of criteria B1 to B5 (CONFIRMED FROM SOURCE DOCUMENT: label and maximum).
  * Identity is `componentNo`, the position in the annexure listing for that cadre and criterion. Wording and
  * number of components differ by cadre, so never compare components across cadres by number.
  * `selfScore` is [S]; how it is produced is REQUIRES COLLEGE CONFIRMATION.
